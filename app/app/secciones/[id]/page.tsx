@@ -4,6 +4,7 @@ import { OwnerActions } from '@/components/owner-actions';
 import { env } from '@/lib/env';
 import Link from 'next/link';
 import { getContext, can } from '@/lib/context';
+import { CopyCode } from '@/components/copy-code';
 import { PageHeader, Card, Empty, StatusBadge, Tabs, Badge } from '@/components/ui';
 import { ActionForm, Field, Grid, SelectField, TextArea } from '@/components/forms';
 import { roomOptions, teacherOptions } from '@/lib/options';
@@ -11,7 +12,7 @@ import { WEEKDAYS, fmtDateTime, fmtNum, fullName, label, tzOffset, fmtSlot } fro
 import {
   addSchedule, removeSchedule, registerStudent, dropStudent, createClassSession, saveAttendance,
   createAssessment, togglePublish, saveGrades, closeActa, amendGrade, updateSection,
-  openCheckin, closeCheckin, teacherMark, attendanceFromVirtual,
+  openCheckin, closeCheckin, teacherMark, attendanceFromVirtual, newRoomCode,
 } from '../actions';
 
 const TSTATUS: Record<string, [string, 'gray' | 'green' | 'red' | 'amber']> = {
@@ -44,6 +45,13 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     <>
       <PageHeader title={`${s.courses.code} · ${s.courses.name}`} subtitle={`Sección ${s.code} · ${s.academic_periods.name} · ${s.campuses.name} · Profesor: ${s.teachers ? fullName(s.teachers) : 'sin asignar'}`}
         actions={<>{closed ? <Badge color="gray">Acta cerrada</Badge> : <Badge color="green">Acta abierta</Badge>}<Link className="btn-secondary" href={isTeacher ? '/app/docencia' : '/app/secciones'}>Volver</Link></>} />
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        {s.room_code && <CopyCode code={s.room_code} />}
+        <Link className="link text-sm" href={`/app/aula/${id}`}>🎓 Abrir la sala en el Aula</Link>
+        {can(ctx, 'sections.edit') && (
+          <ActionForm action={newRoomCode} inline submitLabel="♻ Nuevo código" submitClass="btn-secondary btn-sm" confirm="¿Generar un código nuevo? El anterior deja de funcionar.">
+            <input type="hidden" name="id" value={id} /></ActionForm>)}
+      </div>
       <Tabs items={tabs} current={t} />
       {t === 'resumen' && <Resumen />}
       {t === 'asistencia' && <Asistencia />}

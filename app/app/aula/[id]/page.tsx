@@ -1,9 +1,10 @@
 import Link from 'next/link';
 import { OwnerActions } from '@/components/owner-actions';
 import { DownloadMenu } from '@/components/download-menu';
-import { getContext } from '@/lib/context';
+import { getContext, can } from '@/lib/context';
 import { loadSection } from '@/lib/aula';
 import { PageHeader, Card, Badge, Empty, Tabs } from '@/components/ui';
+import { CopyCode } from '@/components/copy-code';
 import { ActionForm, Field, Grid, SelectField, TextArea } from '@/components/forms';
 import { fmtDateTime } from '@/lib/format';
 import { ACCEPT } from '@/lib/lms';
@@ -20,6 +21,11 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const tab = (await searchParams).t ?? 'contenidos';
   const ctx = await getContext();
   const { s, manager, student } = await loadSection(ctx, id);
+  // Otras salas (secciones) del mismo curso y periodo: cada una con sus estudiantes, su profesor y su código
+  const { data: others } = can(ctx, 'sections.view')
+    ? await ctx.supabase.from('sections').select('id, code, room_code, teachers(first_names, last_names)').eq('course_id', s.course_id).eq('period_id', s.period_id).neq('id', id).order('code')
+    : { data: [] as any[] };
+  const otherRooms = others ?? [];
   const base = `/app/aula/${id}`;
   const { data: assessments } = manager ? await ctx.supabase.from('assessments').select('id, name, weight_pct').eq('section_id', id) : { data: [] as any[] };
   const assessOpts = (assessments ?? []).map((a: any) => ({ value: a.id, label: `${a.name} (${a.weight_pct}%)` }));
@@ -322,8 +328,15 @@ export default async function Page({ params, searchParams }: { params: Promise<{
 
   return (
     <>
-      <PageHeader title={s.courses?.name ?? 'Curso'} subtitle={`${s.courses?.code ?? ''} · Sección ${s.code} · ${s.academic_periods?.name ?? ''}`} />
-      <Link href="/app/aula" className="link text-sm">← Mis cursos</Link>
+      <PageHeader title={s.courses?.name ?? 'Curso'} subtitle={`${s.courses?.code ?? ''} · Sala ${s.code} · ${s.academic_periods?.name ?? ''}${s.teachers ? ` · Profesor: ${s.teachers.first_names} ${s.teachers.last_names}` : ''}`} />
+      <div className="flex flex-wrap items-center gap-3">
+        <Link href="/app/aula" className="link text-sm">← Mis cursos</Link>
+        {s.room_code && <CopyCode code={s.room_code} />}
+        {manager && <Link className="link text-sm" href={`/app/secciones/${s.id}`}>👥 Estudiantes de esta sala</Link>}
+      </div>
+      {otherRooms.length > 0 && (
+        <p className="mt-2 text-sm text-slate-600" data-testid="otras-salas">Otras salas de este curso: {otherRooms.map((r: any, i: number) => (
+          <span key={r.id}>{i ? ' · ' : ''}<Link className="link" href={`/app/aula/${r.id}`}>Sala {r.code}</Link> <span className="font-mono text-xs">({r.room_code})</span>{r.teachers ? ` — ${r.teachers.first_names} ${r.teachers.last_names}` : ''}</span>))}</p>)}
       <div className="mt-4"><Tabs current={tab} items={[
         { key: 'contenidos', label: '📚 Contenidos', href: base }, { key: 'tareas', label: '📝 Tareas', href: `${base}?t=tareas` },
         { key: 'examenes', label: '✅ Exámenes', href: `${base}?t=examenes` }, { key: 'evaluacion', label: '🎯 Evaluación y calificación', href: `${base}?t=evaluacion` },

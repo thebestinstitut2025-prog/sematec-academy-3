@@ -16,7 +16,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   const [periods, campuses, courses, teachers, scales] = await Promise.all([periodOptions(ctx), campusOptions(ctx), courseOptions(ctx), teacherOptions(ctx), gradeScaleOptions(ctx)]);
   const periodo = (await searchParams).periodo ?? periods[0]?.value;
   const { data: sections } = periodo ? await ctx.supabase.from('sections')
-    .select('id, code, capacity, status, grades_closed_at, courses(code, name), teachers(first_names, last_names), campuses(name), section_schedules(weekday, time_slot), section_enrollments(count)')
+    .select('id, code, room_code, capacity, status, grades_closed_at, courses(code, name), teachers(first_names, last_names), campuses(name), section_schedules(weekday, time_slot), section_enrollments(count)')
     .eq('organization_id', orgId).eq('period_id', periodo).eq('section_enrollments.status', 'enrolled').order('code') : { data: [] as any[] };
 
   return (
@@ -24,14 +24,15 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
       <PageHeader title="Secciones" subtitle="Cursos dictados por periodo: horarios, inscritos, asistencia y notas" />
       {can(ctx, 'sections.create') && (
         <details className="card mb-6">
-          <summary className="cursor-pointer px-5 py-3 text-sm font-bold text-brand-700">+ Nueva sección</summary>
+          <summary className="cursor-pointer px-5 py-3 text-sm font-bold text-brand-700">+ Nueva sección (sala)</summary>
           <div className="border-t border-slate-100 p-5">
+            <p className="mb-3 text-sm text-slate-600">Un curso puede tener <b>varias salas</b> (A, B, Mañana, Noche…): cada una con <b>sus propios estudiantes, su profesor, sus clases y su código de sala</b>. Para otra sala del mismo curso, cree una sección más con la misma asignatura y otro nombre.</p>
             <ActionForm action={createSection} submitLabel="Crear sección">
               <Grid cols={3}>
                 <SelectField label="Asignatura" name="course_id" required options={courses} />
                 <SelectField label="Periodo" name="period_id" required options={periods} defaultValue={periodo} />
                 <SelectField label="Sede" name="campus_id" required options={campuses} />
-                <Field label="Código de sección" name="code" required placeholder="S1" />
+                <Field label="Nombre de la sala / sección" name="code" required placeholder="A, B, Mañana, Noche…" />
                 <SelectField label="Profesor" name="teacher_id" options={teachers} placeholder="Sin asignar" />
                 <SelectField label="Escala de notas" name="grade_scale_id" required options={scales} />
                 <Field label="Cupos" name="capacity" type="number" min={1} required defaultValue={30} />
@@ -48,11 +49,11 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
           <button className="btn-secondary">Ver</button>
         </form>
         {sections?.length ? <div className="overflow-x-auto"><table className="table">
-          <thead><tr><th>Asignatura</th><th>Sección</th><th>Profesor</th><th>Sede</th><th>Horario</th><th>Inscritos</th><th>Acta</th>{ctx.isOwner && <th></th>}</tr></thead>
+          <thead><tr><th>Asignatura</th><th>Sala</th><th>Código de sala</th><th>Profesor</th><th>Sede</th><th>Horario</th><th>Inscritos</th><th>Acta</th>{ctx.isOwner && <th></th>}</tr></thead>
           <tbody>{sections.map((s: any) => (
             <tr key={s.id}>
               <td><Link className="link" href={`/app/secciones/${s.id}`}>{s.courses?.code} · {s.courses?.name}</Link></td>
-              <td>{s.code}</td><td>{s.teachers ? `${s.teachers.first_names} ${s.teachers.last_names}` : '—'}</td><td>{s.campuses?.name}</td>
+              <td>{s.code}</td><td className="font-mono text-xs tracking-wider" data-testid="codigo-sala-lista">{s.room_code}</td><td>{s.teachers ? `${s.teachers.first_names} ${s.teachers.last_names}` : '—'}</td><td>{s.campuses?.name}</td>
               <td className="text-xs">{s.section_schedules?.map((h: any) => `${WEEKDAYS[h.weekday].slice(0, 3)} ${fmtSlot(h.time_slot)}`).join(' · ') || '—'}</td>
               <td>{s.section_enrollments?.[0]?.count ?? 0} / {s.capacity}</td>
               <td>{s.grades_closed_at ? 'Cerrada' : 'Abierta'}</td>

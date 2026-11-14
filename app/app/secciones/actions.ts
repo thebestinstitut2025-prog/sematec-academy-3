@@ -227,3 +227,15 @@ export async function attendanceFromVirtual(fd: FormData): Promise<ActionResult>
     return ok(`Asistencia tomada desde el aula virtual (${data} estudiantes actualizados).`);
   });
 }
+
+/** ♻ Genera un código de sala nuevo (el anterior deja de funcionar). */
+export async function newRoomCode(fd: FormData): Promise<ActionResult> {
+  return guard(async () => {
+    const ctx = await getContext();
+    const id = reqStr(fd, 'id', 'id');
+    const { data, error } = await ctx.supabase.rpc('regenerate_room_code', { p_section: id });
+    if (error) return fail(error);
+    revalidatePath(`/app/secciones/${id}`);
+    return ok(`Nuevo código de sala: ${data}`);
+  });
+}

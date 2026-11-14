@@ -2,6 +2,8 @@ import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getContext, can, requireOrg } from '@/lib/context';
 import { PageHeader, Card, Empty } from '@/components/ui';
+import { ActionForm } from '@/components/forms';
+import { enterRoomByCode } from './sala-actions';
 
 export const metadata = { title: 'Aula de aprendizaje' };
 
@@ -14,12 +16,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ a
     if (Number(n) > 0) redirect('/app/aula');
   }
   const orgId = requireOrg(ctx);
-  let q = ctx.supabase.from('sections').select('id, code, courses(code, name), academic_periods(name), teachers(first_names, last_names)').eq('organization_id', orgId).limit(300);
+  let q = ctx.supabase.from('sections').select('id, code, room_code, course_id, courses(code, name), academic_periods(name), teachers(first_names, last_names)').eq('organization_id', orgId).limit(300);
   if (ctx.studentId && !ctx.teacherId && !can(ctx, 'sections.view')) {
     const { data: se } = await ctx.supabase.from('section_enrollments').select('section_id').eq('student_id', ctx.studentId).neq('status', 'dropped');
     q = q.in('id', (se ?? []).map((x: any) => x.section_id).concat(['00000000-0000-0000-0000-000000000000']));
   } else if (ctx.teacherId && !can(ctx, 'sections.view')) q = q.eq('teacher_id', ctx.teacherId);
   const { data: sections } = await q;
+  const perCourse = (sections ?? []).reduce<Record<string, number>>((a, x: any) => { a[x.course_id] = (a[x.course_id] ?? 0) + 1; return a; }, {});
   const staff = can(ctx, 'students.view');
   const { data: rep } = staff ? await ctx.supabase.rpc('aula_access_report', { p_org: orgId }) : { data: null };
   const badN = ((rep ?? []) as { issue: string }[]).filter((r) => r.issue !== 'ok').length;
@@ -34,13 +37,18 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ a
           <Link className="link font-semibold" href="/app/aula/acceso">🩺 Revisar acceso de estudiantes</Link>
         </p>)}
       {aviso && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900" role="alert" data-testid="aviso-aula">⚠ {aviso}</p>}
+      <ActionForm action={enterRoomByCode} className="mb-4 flex flex-wrap items-end gap-2" submitLabel="🔑 Entrar a la sala" submitClass="btn-secondary">
+        <label className="text-sm"><span className="mb-1 block font-semibold text-slate-600">¿Tiene el código de su sala?</span>
+          <input name="code" required className="input w-56 font-mono uppercase" placeholder="SALA-XXXXXX" autoComplete="off" /></label>
+      </ActionForm>
       {sections?.length ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sections.map((s: any) => (
             <Link key={s.id} href={`/app/aula/${s.id}`} className="card card-pad block transition hover:border-brand-500">
-              <p className="text-xs font-bold text-brand-600">{s.courses?.code} · Sección {s.code}</p>
+              <p className="text-xs font-bold text-brand-600">{s.courses?.code} · Sala {s.code}{perCourse[s.course_id] > 1 ? ` (de ${perCourse[s.course_id]})` : ''}</p>
               <h2 className="mt-1 text-lg font-bold">{s.courses?.name}</h2>
               <p className="mt-2 text-sm text-slate-500">{s.academic_periods?.name}{s.teachers && ` · ${s.teachers.first_names} ${s.teachers.last_names}`}</p>
+              <p className="mt-2 font-mono text-xs tracking-wider text-slate-500" data-testid="tarjeta-codigo">🔑 {s.room_code}</p>
             </Link>))}
         </div>
       ) : can(ctx, 'sections.create') ? (
