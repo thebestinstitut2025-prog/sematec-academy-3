@@ -1,5 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
+import { redirect } from 'next/navigation';
 import { getContext, can } from '@/lib/context';
 import { docFields, fail, guard, num, ok, reqStr, str, type ActionResult } from '@/lib/actions';
 
@@ -121,5 +122,47 @@ export async function enrollmentCharge(fd: FormData): Promise<ActionResult> {
     if (error) return fail(error);
     revalidatePath(`/app/matriculas/${id}`);
     return ok('Arancel y cuotas generados.');
+  });
+}
+
+/** 🗑 Elimina una matrícula sin pagos ni notas (sus aranceles pendientes quedan anulados). */
+export async function deleteEnrollment(fd: FormData): Promise<ActionResult> {
+  return guard(async () => {
+    const ctx = await getContext();
+    const id = reqStr(fd, 'id', 'id');
+    const reason = reqStr(fd, 'reason', 'Motivo');
+    const { error } = await ctx.supabase.rpc('delete_enrollment', { p_id: id, p_reason: reason });
+    if (error) return fail(/delete_enrollment/.test(error.message) ? 'Falta instalar la actualización «Matrículas editar eliminar» en Actualizar base de datos.' : error);
+    revalidatePath('/app/matriculas');
+    if (fd.get('after') === 'list') redirect('/app/matriculas');
+    return ok('Matrícula eliminada. Sus aranceles sin pagar quedaron anulados.');
+  });
+}
+
+/** ✏ Cambia monto, cuotas, primer vencimiento o beca de un arancel sin pagos (se anula y se genera de nuevo). */
+export async function changeEnrollmentCharge(fd: FormData): Promise<ActionResult> {
+  return guard(async () => {
+    const ctx = await getContext();
+    const id = reqStr(fd, 'id', 'id');
+    const { error } = await ctx.supabase.rpc('change_charge', {
+      p_charge: reqStr(fd, 'charge_id', 'Arancel'), p_gross: num(fd, 'amount') ?? 0, p_installments: num(fd, 'installments') ?? 1,
+      p_first_due: reqStr(fd, 'first_due', 'Primer vencimiento'), p_benefit: str(fd, 'benefit_id'), p_description: str(fd, 'description'),
+      p_reason: str(fd, 'reason'),
+    });
+    if (error) return fail(/change_charge/.test(error.message) ? 'Falta instalar la actualización «Matrículas editar eliminar» en Actualizar base de datos.' : error);
+    revalidatePath(`/app/matriculas/${id}`);
+    return ok('Arancel actualizado: se anuló el anterior y se generaron las cuotas nuevas.');
+  });
+}
+
+/** 🗑 Anula un arancel sin pagos (queda en el historial con su motivo). */
+export async function cancelEnrollmentCharge(fd: FormData): Promise<ActionResult> {
+  return guard(async () => {
+    const ctx = await getContext();
+    const id = reqStr(fd, 'id', 'id');
+    const { error } = await ctx.supabase.rpc('cancel_charge', { p_charge: reqStr(fd, 'charge_id', 'Arancel'), p_reason: reqStr(fd, 'reason', 'Motivo') });
+    if (error) return fail(error);
+    revalidatePath(`/app/matriculas/${id}`);
+    return ok('Arancel anulado.');
   });
 }

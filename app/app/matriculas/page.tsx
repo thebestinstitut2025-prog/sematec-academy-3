@@ -4,7 +4,7 @@ import { PageHeader, Card, Empty, StatusBadge } from '@/components/ui';
 import { ActionForm, Field, Grid, SelectField } from '@/components/forms';
 import { periodOptions, programOptions, studentOptions } from '@/lib/options';
 import { fmtDate } from '@/lib/format';
-import { enroll, changeStatus } from './actions';
+import { enroll, changeStatus, deleteEnrollment } from './actions';
 import { EnrollPricing } from '@/components/enroll-pricing';
 import { offeringPricing } from '@/lib/pricing';
 
@@ -55,7 +55,14 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
           <tbody>{rows.map((e: any) => (
             <tr key={e.id}>
               <td><Link className="link" href={`/app/estudiantes/${e.students?.id}`}>{e.students?.last_names}, {e.students?.first_names}</Link></td>
-              <td>{e.programs?.code} · {e.programs?.name}<Link className="link ml-2 text-xs" href={`/app/matriculas/${e.id}`} data-testid="editar-matricula">✏ Editar</Link></td><td>{e.campuses?.name}</td><td>{fmtDate(e.enrolled_at)}</td><td><StatusBadge status={e.status} /></td>
+              <td>{e.programs?.code} · {e.programs?.name}<Link className="link ml-2 text-xs" href={`/app/matriculas/${e.id}`} data-testid="editar-matricula">✏ Editar</Link>
+                {(ctx.isOwner || can(ctx, 'enrollments.void')) && (
+                  <details className="mt-1 text-xs" data-testid="eliminar-matricula"><summary className="cursor-pointer text-red-700 hover:underline">🗑 Eliminar</summary>
+                    <ActionForm action={deleteEnrollment} inline submitLabel="Eliminar" submitClass="btn-danger btn-sm" confirm="¿Eliminar esta matrícula? Sus aranceles sin pagar quedarán anulados. No se puede deshacer.">
+                      <input type="hidden" name="id" value={e.id} />
+                      <input name="reason" required placeholder="Motivo" className="input w-40 py-1 text-xs" />
+                    </ActionForm>
+                  </details>)}</td><td>{e.campuses?.name}</td><td>{fmtDate(e.enrolled_at)}</td><td><StatusBadge status={e.status} /></td>
               {can(ctx, 'enrollments.approve') && <td>
                 <ActionForm action={changeStatus} inline submitLabel="Aplicar" submitClass="btn-secondary btn-sm" confirm="¿Confirmar el cambio de estado de la matrícula?">
                   <input type="hidden" name="id" value={e.id} />

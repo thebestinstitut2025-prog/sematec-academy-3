@@ -6,7 +6,7 @@ import { ActionForm, Field, Grid, SelectField, TextArea } from '@/components/for
 import { campusOptions, periodOptions, programOptions } from '@/lib/options';
 import { fmtDate, fmtMoney } from '@/lib/format';
 import { DOC_TYPES } from '@/lib/identity';
-import { changeStatus, enrollmentCharge, enrollmentSection, updateEnrollment, updateEnrollmentDocument } from '../actions';
+import { cancelEnrollmentCharge, changeEnrollmentCharge, changeStatus, deleteEnrollment, enrollmentCharge, enrollmentSection, updateEnrollment, updateEnrollmentDocument } from '../actions';
 
 export const metadata = { title: 'Editar matrícula' };
 const STATUS = [['active', 'Activa'], ['suspended', 'Suspendida'], ['withdrawn', 'Retiro'], ['completed', 'Egreso'], ['cancelled', 'Anulada']];
@@ -27,13 +27,15 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     ctx.supabase.from('curricula').select('id, version, status, programs(name)').eq('organization_id', orgId).eq('program_id', e.program_id),
     ctx.supabase.from('section_enrollments').select('id, status, enrolled_at, sections(id, code, courses(name, code))').eq('enrollment_id', id).order('enrolled_at'),
     ctx.supabase.from('sections').select('id, code, courses(name, code)').eq('organization_id', orgId).eq('period_id', e.period_id).eq('status', 'active').order('code').limit(300),
-    ctx.supabase.from('charges').select('id, concept, description, net_amount, currency, status, created_at').eq('enrollment_id', id).order('created_at'),
+    ctx.supabase.from('charges').select('id, concept, description, gross_amount, net_amount, benefit_id, currency, status, created_at, cancel_reason, installments(number, due_on)').eq('enrollment_id', id).order('created_at'),
     ctx.supabase.from('organizations').select('base_currency').eq('id', orgId).single(),
     ctx.supabase.from('benefits').select('id, name').eq('organization_id', orgId).eq('status', 'active'),
   ]);
   const canEdit = can(ctx, 'enrollments.edit') || can(ctx, 'enrollments.create') || can(ctx, 'enrollments.admin');
   const taken = new Set((secs ?? []).filter((s: any) => s.status !== 'dropped').map((s: any) => s.sections?.id));
   const notes = (e.financial_terms as any)?.notes ?? '';
+  const canFin = can(ctx, 'finance.create') && can(ctx, 'finance.void');
+  const canDelete = ctx.isOwner || can(ctx, 'enrollments.void');
 
   return (
     <>
@@ -110,10 +112,44 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
 
         <Card title="💳 Aranceles de esta matrícula" className="lg:col-span-2">
           {charges?.length ? <div className="overflow-x-auto"><table className="table">
-            <thead><tr><th>Fecha</th><th>Concepto</th><th className="text-right">Monto</th><th>Estado</th></tr></thead>
-            <tbody>{charges.map((c: any) => (
-              <tr key={c.id}><td>{fmtDate(c.created_at)}</td><td>{CONCEPTS.find(([k]) => k === c.concept)?.[1] ?? c.concept}{c.description ? ` · ${c.description}` : ''}</td>
-                <td className="text-right">{fmtMoney(c.net_amount, c.currency)}</td><td><StatusBadge status={c.status} /></td></tr>))}</tbody></table></div>
+            <thead><tr><th>Fecha</th><th>Concepto</th><th className="text-right">Monto</th><th>Cuotas</th><th>Estado</th>{canFin && <th>Acciones</th>}</tr></thead>
+            <tbody>{charges.map((c: any) => {
+              const inst = ((c.installments ?? []) as { number: number; due_on: string }[]).sort((a, b) => a.number - b.number);
+              return (
+              <tr key={c.id} data-testid="fila-arancel" className={c.status === 'cancelled' ? 'opacity-60' : ''}>
+                <td>{fmtDate(c.created_at)}</td>
+                <td>{CONCEPTS.find(([k]) => k === c.concept)?.[1] ?? c.concept}{c.description ? ` · ${c.description}` : ''}{c.status === 'cancelled' && c.cancel_reason ? <div className="text-xs text-slate-500">{c.cancel_reason}</div> : null}</td>
+                <td className="text-right">{fmtMoney(c.net_amount, c.currency)}</td>
+                <td className="text-sm">{inst.length}{inst[0] ? <span className="text-xs text-slate-500"> · desde {fmtDate(inst[0].due_on)}</span> : null}</td>
+                <td><StatusBadge status={c.status} /></td>
+                {canFin && <td className="text-sm">
+                  {c.status === 'pending' ? (
+                    <div className="flex flex-wrap gap-2">
+                      <details className="w-full" data-testid="cambiar-arancel"><summary className="link cursor-pointer">✏ Cambiar monto o cuotas</summary>
+                        <ActionForm action={changeEnrollmentCharge} submitLabel="Guardar cambio" className="mt-2" confirm="Se anulará este arancel y se generarán las cuotas nuevas. ¿Continuar?">
+                          <input type="hidden" name="id" value={id} /><input type="hidden" name="charge_id" value={c.id} />
+                          <Grid cols={3}>
+                            <Field label="Monto total" name="amount" type="number" min={1} step="0.01" required defaultValue={c.gross_amount} />
+                            <Field label="N° de cuotas" name="installments" type="number" min={1} max={36} required defaultValue={inst.length || 1} />
+                            <Field label="Primer vencimiento" name="first_due" type="date" required defaultValue={inst[0]?.due_on} />
+                            <SelectField label="Beca / descuento" name="benefit_id" defaultValue={c.benefit_id ?? ''} options={(benefits ?? []).map((b: any) => ({ value: b.id, label: b.name }))} placeholder="Ninguno" />
+                            <Field label="Descripción" name="description" defaultValue={c.description ?? ''} />
+                            <Field label="Motivo del cambio" name="reason" placeholder="Ej.: precio corregido" />
+                          </Grid>
+                        </ActionForm>
+                      </details>
+                      <details data-testid="anular-arancel"><summary className="cursor-pointer text-red-700 hover:underline">🗑 Anular</summary>
+                        <ActionForm action={cancelEnrollmentCharge} inline submitLabel="Anular arancel" submitClass="btn-danger btn-sm" confirm="¿Anular este arancel? Quedará en el historial como anulado.">
+                          <input type="hidden" name="id" value={id} /><input type="hidden" name="charge_id" value={c.id} />
+                          <input name="reason" required placeholder="Motivo" className="input w-44 py-1 text-xs" />
+                        </ActionForm>
+                      </details>
+                    </div>)
+                    : c.status === 'cancelled' ? <span className="text-xs text-slate-400">Anulado</span>
+                    : <span className="text-xs text-slate-500">Tiene pagos: para cambiarlo, anule o reembolse el pago en el estado de cuenta.</span>}
+                </td>}
+              </tr>);
+            })}</tbody></table></div>
             : <Empty>Esta matrícula no tiene aranceles.</Empty>}
           <p className="mt-2 text-xs"><Link className="link" href={`/app/finanzas/cuenta/${st?.id}`}>Ver estado de cuenta, pagos y boletas →</Link></p>
           {can(ctx, 'finance.create') && (
@@ -130,6 +166,15 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
               </Grid>
             </ActionForm>)}
         </Card>
+
+        {canDelete && (
+          <Card title="🗑 Eliminar matrícula" className="lg:col-span-2">
+            <p className="mb-3 text-sm text-slate-600">Úsela si la matrícula se creó por error o está duplicada. Se quitan sus asignaturas y sus aranceles sin pagar quedan anulados. Si ya tiene pagos o notas no se puede eliminar: cambie su estado a «Anulada» o «Retiro».</p>
+            <ActionForm action={deleteEnrollment} submitLabel="🗑 Eliminar matrícula" submitClass="btn-danger" confirm="¿Eliminar esta matrícula? No se puede deshacer.">
+              <input type="hidden" name="id" value={id} /><input type="hidden" name="after" value="list" />
+              <Field label="Motivo" name="reason" required placeholder="Ej.: matrícula duplicada" className="max-w-md" />
+            </ActionForm>
+          </Card>)}
       </div>
     </>
   );
