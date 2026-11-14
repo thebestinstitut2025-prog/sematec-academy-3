@@ -2,6 +2,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { searchAll, type SearchHit } from '@/app/app/buscar-actions';
+import { SEARCH_MAX_CHARS, SEARCH_MAX_DIGITS, isNumberSearch, searchLimit } from '@/lib/search-limits';
 import type { NavItem } from '@/components/nav';
 
 const ICONS: Record<string, string> = {
@@ -64,7 +65,7 @@ export function GlobalSearch({ items }: { items: NavItem[] }) {
           <div className="w-full max-w-2xl overflow-hidden rounded-2xl bg-white text-ink shadow-2xl" onMouseDown={(e) => e.stopPropagation()} role="dialog" aria-label="Buscar en el sistema">
             <div className="flex items-center gap-3 border-b border-slate-100 px-4">
               <span aria-hidden className="text-lg">🔍</span>
-              <input ref={input} value={q} onChange={(e) => setQ(e.target.value)} data-testid="buscar-texto"
+              <input ref={input} value={q} onChange={(e) => { const v = e.target.value; setQ(isNumberSearch(v) && (v.match(/\d/g) ?? []).length > SEARCH_MAX_DIGITS ? searchLimit(v) : v.slice(0, SEARCH_MAX_CHARS)); }} data-testid="buscar-texto" maxLength={SEARCH_MAX_CHARS}
                 placeholder="Nombre, RUT, producto, código de barras, sección, N° de boleta o venta…" aria-label="Texto a buscar"
                 className="w-full py-4 text-base outline-none"
                 onKeyDown={(e) => {
@@ -75,10 +76,11 @@ export function GlobalSearch({ items }: { items: NavItem[] }) {
                   else if (e.key === 'Enter' && q.trim()) { e.preventDefault(); goAll(); }
                 }} />
               {pending && <span className="animate-pulse text-xs text-slate-400">Buscando…</span>}
+              {q.trim() && <span className="shrink-0 text-[11px] text-slate-400" data-testid="buscar-contador">{isNumberSearch(q) ? `${(q.match(/\d/g) ?? []).length}/${SEARCH_MAX_DIGITS} dígitos` : `${q.trim().length}/${SEARCH_MAX_CHARS}`}</span>}
               <button className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-slate-100" onClick={() => setOpen(false)}>Esc</button>
             </div>
             <ul className="max-h-[60vh] overflow-y-auto p-2" data-testid="buscar-resultados">
-              {q.trim().length < 1 && <li className="px-3 py-6 text-center text-sm text-slate-500">Escriba cualquier palabra o número. Use ↑ ↓ para moverse y Enter para abrir.</li>}
+              {q.trim().length < 1 && <li className="px-3 py-6 text-center text-sm text-slate-500">Escriba un número (1 a {SEARCH_MAX_DIGITS} dígitos) o un texto (1 a {SEARCH_MAX_CHARS} letras). Use ↑ ↓ para moverse y Enter para abrir.</li>}
               {q.trim().length >= 1 && !pending && all.length === 0 && <li className="px-3 py-6 text-center text-sm text-slate-500">Sin resultados para «{q.trim()}».</li>}
               {all.map((h, i) => (
                 <li key={`${h.kind}-${h.id}`}>

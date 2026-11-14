@@ -2,12 +2,13 @@ import Link from 'next/link';
 import { getContext, requireOrg } from '@/lib/context';
 import { PageHeader, Card, Empty } from '@/components/ui';
 import { searchAll, type SearchHit } from '../buscar-actions';
+import { SEARCH_MAX_CHARS, SEARCH_MAX_DIGITS, searchLimit } from '@/lib/search-limits';
 
 export const metadata = { title: 'Buscar' };
 
 export default async function Page({ searchParams }: { searchParams: Promise<{ q?: string; tipo?: string }> }) {
   const sp = await searchParams;
-  const q = String(sp.q ?? '').slice(0, 500).trim();
+  const q = searchLimit(String(sp.q ?? ''));
   const tipo = String(sp.tipo ?? '');
   requireOrg(await getContext());
   const hits = q ? await searchAll(q, true) : [];
@@ -19,7 +20,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ q
     <>
       <PageHeader title="🔎 Buscar en todo el sistema" subtitle="Cualquier palabra o número: nombre, RUT, teléfono, correo, código, N° de boleta, monto, producto…" />
       <form className="mb-4 flex gap-2" action="/app/buscar">
-        <input name="q" defaultValue={q} autoFocus className="input max-w-xl" placeholder="Escriba lo que busca" data-testid="buscar-pagina-texto" />
+        <input name="q" defaultValue={q} autoFocus maxLength={SEARCH_MAX_CHARS} className="input max-w-xl" placeholder={`Número (1 a ${SEARCH_MAX_DIGITS} dígitos) o texto (1 a ${SEARCH_MAX_CHARS} letras)`} data-testid="buscar-pagina-texto" />
         <button className="btn-primary">Buscar</button>
       </form>
       {q && (

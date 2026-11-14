@@ -29,6 +29,14 @@ def main():
         check(True, 'Una sola letra en la búsqueda rápida da resultados')
         p.keyboard.press('Control+Enter'); p.wait_for_url(re.compile(r'/app/buscar\?q=z'))
         check(p.locator('[data-testid=buscar-grupo] li').count() >= 30, 'Ctrl + Enter abre todos los resultados')
+        # Límites: números hasta 20 dígitos, textos hasta 40 letras
+        go(p, f'{BASE}/app'); p.click('[data-testid=buscar]'); p.fill('[data-testid=buscar-texto]', '1234567890123456789012345')
+        v = p.input_value('[data-testid=buscar-texto]')
+        check(sum(ch.isdigit() for ch in v) == 20 and '20/20' in p.locator('[data-testid=buscar-contador]').inner_text(), f'Número: máximo 20 dígitos ({v})')
+        p.fill('[data-testid=buscar-texto]', 'a' * 60)
+        check(len(p.input_value('[data-testid=buscar-texto]')) == 40, 'Texto: máximo 40 letras')
+        go(p, f'{BASE}/app/buscar?q=' + 'zetamundo' + 'x' * 50)
+        check(len(p.input_value('[data-testid=buscar-pagina-texto]')) == 40, 'Página de resultados: también recorta a 40 letras')
         c.close(); b.close()
     ok = sum(1 for r in results if r[0]); print(f'\n{ok}/{len(results)} verificaciones OK')
 

@@ -1,5 +1,6 @@
 'use server';
 import { getContext } from '@/lib/context';
+import { searchLimit } from '@/lib/search-limits';
 
 export type SearchHit = { kind: string; id: string; title: string; subtitle: string; href: string };
 
@@ -11,7 +12,7 @@ export type SearchHit = { kind: string; id: string; title: string; subtitle: str
  */
 export async function searchAll(q: string, full = false): Promise<SearchHit[]> {
   try {
-    const text = String(q ?? '').replace(/[\u0000-\u001f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 500);
+    const text = searchLimit(q);
     if (text.length < 1) return [];
     const ctx = await getContext();
     if (!ctx.orgId) return [];
