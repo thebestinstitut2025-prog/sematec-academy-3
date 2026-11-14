@@ -34,7 +34,7 @@ export function GlobalSearch({ items }: { items: NavItem[] }) {
   // Busca 250 ms después de dejar de escribir
   useEffect(() => {
     const text = q.trim();
-    if (text.length < 2) { setHits([]); return; }
+    if (text.length < 1) { setHits([]); return; }
     const n = ++seq.current;
     const t = setTimeout(() => start(async () => { const r = await searchAll(text); if (n === seq.current) { setHits(r); setSel(0); } }), 250);
     return () => clearTimeout(t);
@@ -42,7 +42,7 @@ export function GlobalSearch({ items }: { items: NavItem[] }) {
 
   const pages = useMemo(() => {
     const t = norm(q.trim());
-    if (t.length < 2) return [];
+    if (t.length < 1) return [];
     const ws = t.split(/\s+/).filter(Boolean);
     return items.filter((i) => { const l = norm(i.label); return l.includes(t) || ws.some((w) => w.length >= 3 && l.includes(w)); }).slice(0, 5)
       .map((i) => ({ kind: 'Página', id: i.href, title: `${i.icon} ${i.label}`, subtitle: 'Ir a la sección', href: i.href }));
@@ -50,6 +50,7 @@ export function GlobalSearch({ items }: { items: NavItem[] }) {
   const all = [...pages, ...hits];
 
   const go = useCallback((h: SearchHit) => { setOpen(false); router.push(h.href); }, [router]);
+  const goAll = useCallback(() => { setOpen(false); router.push(`/app/buscar?q=${encodeURIComponent(q.trim())}`); }, [router, q]);
 
   return (
     <>
@@ -69,14 +70,16 @@ export function GlobalSearch({ items }: { items: NavItem[] }) {
                 onKeyDown={(e) => {
                   if (e.key === 'ArrowDown') { e.preventDefault(); setSel((s) => Math.min(s + 1, all.length - 1)); }
                   else if (e.key === 'ArrowUp') { e.preventDefault(); setSel((s) => Math.max(s - 1, 0)); }
+                  else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && q.trim()) { e.preventDefault(); goAll(); }
                   else if (e.key === 'Enter' && all[sel]) { e.preventDefault(); go(all[sel]); }
+                  else if (e.key === 'Enter' && q.trim()) { e.preventDefault(); goAll(); }
                 }} />
               {pending && <span className="animate-pulse text-xs text-slate-400">Buscando…</span>}
               <button className="rounded-lg px-2 py-1 text-xs text-slate-500 hover:bg-slate-100" onClick={() => setOpen(false)}>Esc</button>
             </div>
             <ul className="max-h-[60vh] overflow-y-auto p-2" data-testid="buscar-resultados">
-              {q.trim().length < 2 && <li className="px-3 py-6 text-center text-sm text-slate-500">Escriba al menos 2 letras. Use ↑ ↓ para moverse y Enter para abrir.</li>}
-              {q.trim().length >= 2 && !pending && all.length === 0 && <li className="px-3 py-6 text-center text-sm text-slate-500">Sin resultados para «{q.trim()}».</li>}
+              {q.trim().length < 1 && <li className="px-3 py-6 text-center text-sm text-slate-500">Escriba cualquier palabra o número. Use ↑ ↓ para moverse y Enter para abrir.</li>}
+              {q.trim().length >= 1 && !pending && all.length === 0 && <li className="px-3 py-6 text-center text-sm text-slate-500">Sin resultados para «{q.trim()}».</li>}
               {all.map((h, i) => (
                 <li key={`${h.kind}-${h.id}`}>
                   <button type="button" onMouseEnter={() => setSel(i)} onClick={() => go(h)}
@@ -90,6 +93,11 @@ export function GlobalSearch({ items }: { items: NavItem[] }) {
                   </button>
                 </li>))}
             </ul>
+            {q.trim().length >= 1 && (
+              <button type="button" onClick={goAll} data-testid="buscar-ver-todos"
+                className="flex w-full items-center justify-between border-t border-slate-100 px-5 py-3 text-left text-sm font-semibold text-brand-700 hover:bg-brand-50">
+                <span>🔎 Ver todos los resultados de «{q.trim()}»</span><kbd className="hidden text-[10px] text-slate-400 sm:inline">Ctrl + Enter</kbd>
+              </button>)}
           </div>
         </div>)}
     </>
