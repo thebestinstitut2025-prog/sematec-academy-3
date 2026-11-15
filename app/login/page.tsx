@@ -5,10 +5,13 @@ import { signIn } from './actions';
 
 export const metadata = { title: 'Iniciar sesión' };
 
-export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string }> }) {
-  const { next, error } = await searchParams;
+export default async function LoginPage({ searchParams }: { searchParams: Promise<{ next?: string; error?: string; correo?: string }> }) {
+  const { next, error, correo } = await searchParams;
   return (
     <AuthShell title="Iniciar sesión" subtitle="Acceda con su cuenta institucional.">
+      {correo === 'ok' && <p className="mb-4 rounded-lg bg-emerald-50 p-3 text-sm text-emerald-800" data-testid="correo-cambiado">✓ Su correo de acceso fue cambiado. Desde ahora entre con su <b>nuevo correo</b> y la misma contraseña.</p>}
+      {correo === 'enlace' && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">El enlace para cambiar el correo ya se usó o venció. Pídalo de nuevo en «Mi cuenta».</p>}
+      {correo === 'ocupado' && <p className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">No se pudo cambiar el correo: ya es la cuenta de otra persona.</p>}
       {error === 'enlace' && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">El enlace del correo ya se usó o venció. <Link className="link" href="/recuperar">Pida uno nuevo</Link>.</p>}
       <ActionForm action={signIn} submitLabel="Ingresar" submitClass="btn-primary w-full" resetOnSuccess={false}>
         <input type="hidden" name="next" value={next ?? '/app'} />

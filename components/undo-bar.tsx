@@ -77,6 +77,8 @@ export function UndoBar() {
             {msg.ok ? '✓ ' : '✕ '}{msg.text}
           </span>
         )}
+        <button type="button" className="btn-secondary btn-sm" onClick={() => router.back()} title="Volver a la página anterior (Alt+←)" aria-label="Volver" data-testid="nav-volver">← Volver</button>
+        <button type="button" className="btn-secondary btn-sm" onClick={() => router.forward()} title="Ir a la página siguiente (Alt+→)" aria-label="Siguiente" data-testid="nav-siguiente">Siguiente →</button>
         <button type="button" className="btn-secondary btn-sm" onClick={() => { setMsg(null); router.refresh(); load(); }}
           title="Volver a cargar los datos de esta página" aria-label="Refrescar">🔄 Refrescar</button>
         <button type="button" className="btn-secondary btn-sm" disabled={busy || !st.undo} onClick={() => run('undo')}

@@ -32,3 +32,44 @@ export async function uploadAvatar(fd: FormData): Promise<ActionResult> {
     return ok('Foto de perfil actualizada.');
   });
 }
+
+/** 📧 Cambiar el correo de acceso: pide la contraseña actual y envía un enlace de confirmación al correo nuevo. */
+export async function changeMyEmail(fd: FormData): Promise<ActionResult> {
+  return guard(async () => {
+    const ctx = await getContext();
+    const { EMAIL_RE, requestEmailChange } = await import('@/lib/email-change');
+    const email = (str(fd, 'new_email') ?? '').trim().toLowerCase();
+    if (!EMAIL_RE.test(email) || email.length > 120) return fail('Escriba un correo válido.');
+    if (email === (ctx.user.email ?? '').toLowerCase()) return fail('Ese ya es su correo de acceso.');
+    const { data: okPw, error } = await ctx.supabase.rpc('verify_my_password', { p_password: str(fd, 'current_password') ?? '' });
+    if (error) return fail(/verify_my_password/.test(error.message) ? 'Falta instalar la actualización «Cuenta correo» en Actualizar base de datos.' : error.message);
+    if (!okPw) return fail('La contraseña actual no es correcta.');
+    const r = await requestEmailChange(ctx.user.id, ctx.user.email ?? '', email, ctx.profile?.full_name ?? null, ctx.orgId);
+    if (!r.ok) return fail(r.error);
+    return ok(`Le enviamos un enlace a ${email}. Ábralo para confirmar (vence en 24 horas). Hasta entonces siga entrando con ${ctx.user.email}.`);
+  });
+}
+
+/** 🗑 Quitar la foto de perfil. */
+export async function removeAvatar(): Promise<ActionResult> {
+  return guard(async () => {
+    const ctx = await getContext();
+    const { error } = await ctx.supabase.from('profiles').update({ avatar_asset_id: null }).eq('id', ctx.user.id);
+    if (error) return fail(error);
+    revalidatePath('/app', 'layout');
+    return ok('Foto de perfil quitada.');
+  });
+}
+
+/** 🌐 Idioma preferido de la cuenta. */
+export async function updateMyLocale(fd: FormData): Promise<ActionResult> {
+  return guard(async () => {
+    const ctx = await getContext();
+    const loc = str(fd, 'preferred_locale') ?? 'es';
+    if (!['es', 'en', 'fr', 'pt', 'ht'].includes(loc)) return fail('Idioma no válido.');
+    const { error } = await ctx.supabase.from('profiles').update({ preferred_locale: loc }).eq('id', ctx.user.id);
+    if (error) return fail(error);
+    revalidatePath('/app', 'layout');
+    return ok('Idioma guardado.');
+  });
+}

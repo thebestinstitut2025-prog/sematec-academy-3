@@ -13,9 +13,12 @@ type Result = { ok: boolean; message?: string; error?: string; data?: unknown; q
  * dispositivo y se envía solo al volver la conexión (se informa que aún no está en la nube).
  */
 export function ActionForm({
-  action, children, submitLabel = 'Guardar', className = '', confirm, resetOnSuccess = true, submitClass = 'btn-primary', inline = false, onDone, hideSubmit = false, offline, id,
+  action, children, submitLabel = 'Guardar', className = '', confirm, resetOnSuccess = true, submitClass = 'btn-primary', inline = false, onDone, hideSubmit = false, offline, id, cancel,
 }: {
   id?: string;
+  /** Botón «Cancelar»: true = limpia el formulario (y cierra el desplegable); 'back' = vuelve a la página anterior; '/ruta' = va a esa página.
+   *  Si no se indica, aparece solo cuando el formulario está dentro de un desplegable (por ejemplo «✏ Editar» o «+ Nuevo»). */
+  cancel?: boolean | 'back' | string;
   action: (fd: FormData) => Promise<Result>;
   children?: ReactNode; submitLabel?: string; className?: string; confirm?: string; resetOnSuccess?: boolean;
   submitClass?: string; inline?: boolean; onDone?: (r: Result) => void; hideSubmit?: boolean;
@@ -25,6 +28,15 @@ export function ActionForm({
   const [pending, start] = useTransition();
   const ref = useRef<HTMLFormElement>(null);
   const router = useRouter();
+  const [inDetails, setInDetails] = useState(false);
+  useEffect(() => { setInDetails(!!ref.current?.parentElement?.closest('details')); }, []);
+  const showCancel = cancel === undefined ? (inDetails && !inline && !hideSubmit) : cancel !== false;
+  const onCancel = () => {
+    ref.current?.reset(); setResult(null);
+    if (cancel === 'back') { router.back(); return; }
+    if (typeof cancel === 'string' && cancel.startsWith('/')) { router.push(cancel); return; }
+    const d = ref.current?.closest('details'); if (d) d.open = false;
+  };
   // Si el formulario desaparece al guardar (la fila sale de la lista), el resultado se muestra en un aviso flotante
   const last = useRef<{ r: Result; at: number } | null>(null);
   useEffect(() => () => {
@@ -83,6 +95,7 @@ export function ActionForm({
           <button type="submit" className={submitClass} disabled={pending}>
             {pending ? 'Procesando…' : submitLabel}
           </button>
+          {showCancel && <button type="button" className="btn-secondary" disabled={pending} onClick={onCancel} data-testid="form-cancelar">Cancelar</button>}
         </div>
       </div>
       {result && (
