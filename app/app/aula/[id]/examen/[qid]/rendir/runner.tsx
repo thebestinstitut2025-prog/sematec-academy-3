@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { startQuiz, submitQuiz } from '../../../../actions';
+import { AttachFiles } from '@/components/attach-files';
 
 type Q = { id: string; prompt: string; kind: 'unica' | 'multiple' | 'vf'; options: string[]; points: number };
 
@@ -21,7 +22,8 @@ export function StartQuiz({ quizId }: { quizId: string }) {
   );
 }
 
-export function QuizRunner({ attemptId, deadline, questions, back }: { attemptId: string; deadline: string; questions: Q[]; back: string }) {
+export function QuizRunner({ attemptId, deadline, questions, back, org }: { attemptId: string; deadline: string; questions: Q[]; back: string; org?: string }) {
+  const [files, setFiles] = useState<{ ids: string[]; pending: boolean }>({ ids: [], pending: false });
   const [ans, setAns] = useState<Record<string, number[]>>({});
   const [left, setLeft] = useState(() => new Date(deadline).getTime() - Date.now());
   const [res, setRes] = useState<{ ok: boolean; message?: string; error?: string } | null>(null);
@@ -29,9 +31,11 @@ export function QuizRunner({ attemptId, deadline, questions, back }: { attemptId
   const sent = useRef(false);
   const router = useRouter();
   const send = () => {
-    if (sent.current) return; sent.current = true;
+    if (sent.current) return;
+    if (files.pending && new Date(deadline).getTime() > Date.now()) { setRes({ ok: false, error: 'Espere a que terminen de subir sus archivos.' }); return; }
+    sent.current = true;
     start(async () => {
-      try { const r = await submitQuiz(attemptId, ans); setRes(r); if (!r.ok) sent.current = false; }
+      try { const r = await submitQuiz(attemptId, ans, files.ids); setRes(r); if (!r.ok) sent.current = false; }
       catch { sent.current = false; setRes({ ok: false, error: 'Sin conexión: el examen NO se envió. Reintente.' }); }
     });
   };
@@ -57,6 +61,7 @@ export function QuizRunner({ attemptId, deadline, questions, back }: { attemptId
               <input type={q.kind === 'multiple' ? 'checkbox' : 'radio'} name={q.id} checked={!!ans[q.id]?.includes(i)} onChange={() => toggle(q, i)} />{o}
             </label>))}</div>
         </div>))}
+      {org && <div className="card card-pad"><AttachFiles org={org} label="📎 Adjuntar archivos al examen (desarrollo, fotos de su hoja, PDF…)" onChange={(ids, p) => setFiles({ ids, pending: p })} /></div>}
       <button className="btn-primary w-full py-3" disabled={pending} onClick={() => { if (window.confirm('¿Enviar el examen? No podrá cambiar sus respuestas.')) send(); }}>
         {pending ? 'Enviando…' : 'Enviar examen'}</button>
       {res && !res.ok && <p className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{res.error}</p>}

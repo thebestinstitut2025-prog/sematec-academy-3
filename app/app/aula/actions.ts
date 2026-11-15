@@ -1,5 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
+import { attachTo, readAttachmentIds } from '@/lib/attachments';
 import { getContext } from '@/lib/context';
 import { fail, guard, num, ok, reqStr, str, type ActionResult } from '@/lib/actions';
 import { localToIso, saveLmsFile } from '@/lib/lms';
@@ -62,12 +63,19 @@ export async function createAssignment(fd: FormData): Promise<ActionResult> {
 export async function submitAssignment(fd: FormData): Promise<ActionResult> {
   return guard(async () => {
     const ctx = await getContext(); const section = reqStr(fd, 'section_id', 'sección');
+    const ids = readAttachmentIds(fd);
+    if (!Array.isArray(ids)) return fail(ids.error);
     const file = await saveLmsFile(ctx, fd.get('file') as File, section, 'submission');
     const body = str(fd, 'body'); const url = str(fd, 'url');
-    if (!file && !body && !url) return fail('Escriba una respuesta, agregue un enlace o adjunte un archivo.');
-    const { error } = await ctx.supabase.rpc('submit_assignment', { p_assignment: reqStr(fd, 'assignment_id', 'tarea'), p_body: body, p_url: url, p_file: file });
+    const assignment = reqStr(fd, 'assignment_id', 'tarea');
+    const { data: prev } = await ctx.supabase.from('submissions').select('id').eq('assignment_id', assignment).eq('student_id', ctx.studentId ?? '').maybeSingle();
+    const hadFiles = prev ? ((await ctx.supabase.from('attachments').select('id', { count: 'exact', head: true }).eq('entity_type', 'submission').eq('entity_id', prev.id)).count ?? 0) > 0 : false;
+    if (!file && !body && !url && !ids.length && !hadFiles) return fail('Escriba una respuesta, agregue un enlace o adjunte un archivo.');
+    const { data: sid, error } = await ctx.supabase.rpc('submit_assignment', { p_assignment: assignment, p_body: body, p_url: url, p_file: file });
     if (error) return fail(error);
-    back(section); return ok('Entrega recibida.');
+    const err = await attachTo(ctx, 'submission', String(sid), ids);
+    if (err) return fail(`La respuesta se guardó, pero los archivos no: ${err}`);
+    back(section); return ok(`Entrega recibida${ids.length ? ` con ${ids.length} archivo(s)` : ''}.`);
   });
 }
 
@@ -149,9 +157,12 @@ export async function startQuiz(fd: FormData): Promise<ActionResult> {
   });
 }
 
-export async function submitQuiz(attemptId: string, answers: Record<string, number[]>): Promise<ActionResult> {
+export async function submitQuiz(attemptId: string, answers: Record<string, number[]>, files: string[] = []): Promise<ActionResult> {
   return guard(async () => {
     const ctx = await getContext();
+    const ids = (Array.isArray(files) ? files : []).filter((x) => typeof x === 'string' && /^[0-9a-f-]{36}$/i.test(x)).slice(0, 20);
+    const err = await attachTo(ctx, 'quiz_attempt', attemptId, ids);
+    if (err) return fail(`No se pudieron adjuntar los archivos: ${err}`);
     const { data, error } = await ctx.supabase.rpc('submit_quiz', { p_attempt: attemptId, p_answers: answers });
     if (error) return fail(error);
     const r = data as { score: number; max: number; grade: number | null; show: boolean };

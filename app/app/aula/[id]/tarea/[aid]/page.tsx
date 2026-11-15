@@ -5,6 +5,8 @@ import { loadSection } from '@/lib/aula';
 import { PageHeader, Card, Badge, Empty } from '@/components/ui';
 import { ActionForm, Field } from '@/components/forms';
 import { fmtDateTime } from '@/lib/format';
+import { AttachmentList } from '@/components/attachment-list';
+import { listAttachments } from '@/lib/attachments';
 import { gradeSubmission } from '../../../actions';
 
 export default async function Page({ params }: { params: Promise<{ id: string; aid: string }> }) {
@@ -18,6 +20,7 @@ export default async function Page({ params }: { params: Promise<{ id: string; a
     ctx.supabase.from('section_enrollments').select('student_id, students(first_names, last_names)').eq('section_id', id).neq('status', 'dropped'),
   ]);
   if (!a) notFound();
+  const files = await listAttachments(ctx, 'submission', (subs ?? []).map((x: any) => x.id));
   const missing = (roster ?? []).filter((r: any) => !(subs ?? []).some((s: any) => s.student_id === r.student_id));
   return (
     <>
@@ -31,6 +34,7 @@ export default async function Page({ params }: { params: Promise<{ id: string; a
             {s.body && <p className="mt-2 whitespace-pre-line text-sm">{s.body}</p>}
             {s.url && <p className="mt-1 text-sm"><a className="link" href={s.url} target="_blank" rel="noopener noreferrer">{s.url} ↗</a></p>}
             {s.file_id && <p className="mt-1 text-sm"><a className="link" href={`/app/aula/archivo/${s.file_id}`}>📎 Descargar archivo</a></p>}
+            <AttachmentList items={files[s.id]} />
             <ActionForm action={gradeSubmission} submitLabel="Guardar calificación" className="mt-4 grid gap-3 sm:grid-cols-[8rem_1fr_auto] sm:items-end" resetOnSuccess={false}>
               <input type="hidden" name="section_id" value={id} /><input type="hidden" name="submission_id" value={s.id} />
               <Field label="Puntaje" name="score" type="number" step="0.5" min={0} max={Number(a.max_score)} required defaultValue={s.score ?? undefined} />

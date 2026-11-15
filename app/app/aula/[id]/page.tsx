@@ -5,6 +5,10 @@ import { getContext, can } from '@/lib/context';
 import { loadSection } from '@/lib/aula';
 import { PageHeader, Card, Badge, Empty, Tabs } from '@/components/ui';
 import { CopyCode } from '@/components/copy-code';
+import { AttachFiles } from '@/components/attach-files';
+import { AttachmentList } from '@/components/attachment-list';
+import { listAttachments } from '@/lib/attachments';
+import { attachExternalEval } from '../../adjuntos-actions';
 import { ActionForm, Field, Grid, SelectField, TextArea } from '@/components/forms';
 import { fmtDateTime } from '@/lib/format';
 import { ACCEPT } from '@/lib/lms';
@@ -93,6 +97,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   if (tab === 'tareas') {
     const { data: tasks } = await ctx.supabase.from('assignments').select('*').eq('section_id', id).order('due_at');
     const { data: mine } = student ? await ctx.supabase.from('submissions').select('*').eq('student_id', ctx.studentId!) : { data: [] as any[] };
+    const myFiles = await listAttachments(ctx, 'submission', (mine ?? []).map((m: any) => m.id));
     const { data: counts } = manager ? await ctx.supabase.from('submissions').select('assignment_id, score') : { data: [] as any[] };
     const now = new Date().toISOString();
     body = (
@@ -115,15 +120,16 @@ export default async function Page({ params, searchParams }: { params: Promise<{
               {ctx.isOwner && <div className="mt-2"><OwnerActions table="assignments" id={a.id} active={a.published} path={`/app/aula/${id}?t=tareas`} name={`la tarea «${a.title}»`} /></div>}
               {manager && <p className="mt-3"><Link className="btn-secondary btn-sm" href={`${base}/tarea/${a.id}`}>Ver entregas ({n.length}, {n.filter((x: any) => x.score == null).length} por calificar)</Link></p>}
               {student && (sub?.score != null ? (
-                <div className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm"><b>Calificada: {sub.score} / {a.max_score}</b>{sub.feedback && <p className="mt-1">Comentario: {sub.feedback}</p>}</div>
+                <div className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm"><b>Calificada: {sub.score} / {a.max_score}</b>{sub.feedback && <p className="mt-1">Comentario: {sub.feedback}</p>}<AttachmentList items={myFiles[sub.id]} /></div>
               ) : (
                 <div className="mt-4 border-t border-slate-100 pt-4">
                   {sub && <p className="mb-2 text-sm text-emerald-700">✓ Entregado el {fmtDateTime(sub.submitted_at)}{sub.late && ' (atrasado)'}. Puede reemplazar su entrega hasta que sea calificada.</p>}
+                  {sub && <AttachmentList items={myFiles[sub.id]} canRemove path={base} />}
                   {(a.due_at >= now || a.allow_late) ? (
                     <ActionForm action={submitAssignment} submitLabel={sub ? 'Reemplazar entrega' : 'Entregar'}>{hidden}<input type="hidden" name="assignment_id" value={a.id} />
                       <TextArea label="Respuesta" name="body" rows={3} defaultValue={sub?.body} />
-                      <Grid><Field label="Enlace (opcional, https://)" name="url" defaultValue={sub?.url} />
-                        <label className="block"><span className="label">Archivo (máx. 4 MB)</span><input type="file" name="file" accept={ACCEPT} className="text-sm" /></label></Grid>
+                      <Field label="Enlace (opcional, https://)" name="url" defaultValue={sub?.url} />
+                      <AttachFiles org={s.organization_id} label={sub ? '📎 Agregar más archivos a mi entrega' : '📎 Adjuntar mi tarea (fotos, PDF, Word, video…)'} />
                     </ActionForm>) : <p className="text-sm text-red-600">El plazo terminó.</p>}
                 </div>))}
             </Card>);
@@ -135,6 +141,10 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     const { data: quizzes } = await ctx.supabase.from('quizzes').select('*').eq('section_id', id).order('opens_at');
     const { data: exts } = await ctx.supabase.from('external_evaluations').select('id, title, instructions, provider, opens_at, closes_at, published, assessment_id').eq('section_id', id).order('opens_at');
     const { data: acc } = (exts?.length ? await ctx.supabase.from('external_evaluation_access').select('evaluation_id, student_id, first_opened, last_opened, times, students(first_names, last_names)').in('evaluation_id', exts.map((x: any) => x.id)) : { data: [] }) as { data: any[] | null };
+    const evalFiles = await listAttachments(ctx, 'external_eval', (exts ?? []).map((x: any) => x.id));
+    const uploaders = [...new Set(Object.values(evalFiles).flat().map((f) => f.created_by))];
+    const { data: upl } = manager && uploaders.length ? await ctx.supabase.from('students').select('user_id, first_names, last_names').in('user_id', uploaders) : { data: [] as any[] };
+    const nameOfUser = (u: string) => { const x = (upl ?? []).find((y: any) => y.user_id === u); return x ? `${x.last_names}, ${x.first_names}` : undefined; };
     const PROV: Record<string, string> = { google_forms: '📝 Google Forms', google_drive: '📂 Google Drive', microsoft_forms: '📋 Microsoft Forms', onedrive: '☁ OneDrive', otro: '🔗 Enlace' };
     const { data: att } = student ? await ctx.supabase.from('quiz_attempts').select('quiz_id, submitted_at, score, max_score, grade').eq('student_id', ctx.studentId!) : { data: [] as any[] };
     const now = new Date().toISOString();
@@ -175,6 +185,14 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                   {student && mine && <span className="text-xs text-emerald-700">✓ Usted entró el {fmtDateTime(mine.first_opened)}</span>}
                   {manager && <ActionForm action={deleteExternalEval} inline submitLabel="🗑" submitClass="text-xs text-red-600 hover:underline" confirm={`¿Eliminar «${x.title}»?`}>{hidden}<input type="hidden" name="id" value={x.id} /></ActionForm>}
                 </div>
+                {student && <AttachmentList items={evalFiles[x.id]} canRemove={open} path={base} />}
+                {student && open && (<div data-testid="entregar-evaluacion">
+                  <ActionForm action={attachExternalEval} submitLabel="📤 Entregar archivos" className="mt-3">
+                    <input type="hidden" name="evaluation_id" value={x.id} /><input type="hidden" name="path" value={base} />
+                    <AttachFiles org={s.organization_id} label="📎 Archivos de esta evaluación (si el profesor los pide)" />
+                  </ActionForm></div>)}
+                {manager && (evalFiles[x.id]?.length ?? 0) > 0 && <details className="mt-2 text-sm" open><summary className="cursor-pointer text-slate-500" data-testid="archivos-recibidos">📎 {evalFiles[x.id].length} archivo(s) recibido(s)</summary>
+                  <AttachmentList items={evalFiles[x.id]} who={nameOfUser} /></details>}
                 {manager && <details className="mt-2 text-sm"><summary className="cursor-pointer text-slate-500" data-testid="ingresos">👥 {who.length} estudiante(s) entraron</summary>
                   <ul className="mt-1 space-y-0.5 text-xs">{who.map((a: any) => <li key={a.student_id}>{a.students ? `${a.students.last_names}, ${a.students.first_names}` : a.student_id} · {fmtDateTime(a.first_opened)}{a.times > 1 ? ` (${a.times} veces)` : ''}</li>)}</ul></details>}
               </div>

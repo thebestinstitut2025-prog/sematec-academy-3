@@ -8,7 +8,7 @@ import { QuizRunner, StartQuiz } from './runner';
 export default async function Page({ params }: { params: Promise<{ id: string; qid: string }> }) {
   const { id, qid } = await params;
   const ctx = await getContext();
-  const { student } = await loadSection(ctx, id);
+  const { s: sec, student } = await loadSection(ctx, id);
   if (!student) notFound();
   const { data: q } = await ctx.supabase.from('quizzes').select('*').eq('id', qid).eq('published', true).maybeSingle();
   if (!q) notFound();
@@ -20,7 +20,7 @@ export default async function Page({ params }: { params: Promise<{ id: string; q
       <PageHeader title={q.title} subtitle={q.time_limit_min ? `Tiempo límite: ${q.time_limit_min} minutos` : 'Sin tiempo límite (hasta el cierre)'} />
       <Link href={`/app/aula/${id}?t=examenes`} className="link text-sm">← Exámenes</Link>
       <div className="mt-4">
-        {open && qs ? <QuizRunner attemptId={open.id} deadline={open.deadline} questions={qs as any} back={`/app/aula/${id}?t=examenes`} />
+        {open && qs ? <QuizRunner attemptId={open.id} deadline={open.deadline} questions={qs as any} back={`/app/aula/${id}?t=examenes`} org={sec.organization_id} />
           : <Card>{q.instructions && <p className="mb-4 whitespace-pre-line text-sm">{q.instructions}</p>}
               <p className="mb-4 text-sm text-slate-600">Al comenzar, el tiempo empieza a correr. Las respuestas se corrigen automáticamente al enviar.</p>
               <StartQuiz quizId={qid} /></Card>}

@@ -5,6 +5,8 @@ import { loadSection } from '@/lib/aula';
 import { PageHeader, Card, Badge, Empty } from '@/components/ui';
 import { ActionForm, Field, Grid, SelectField, TextArea } from '@/components/forms';
 import { fmtDateTime } from '@/lib/format';
+import { AttachmentList } from '@/components/attachment-list';
+import { listAttachments } from '@/lib/attachments';
 import { addQuestion, deleteQuestion, publishQuiz } from '../../../actions';
 
 export default async function Page({ params }: { params: Promise<{ id: string; qid: string }> }) {
@@ -19,6 +21,7 @@ export default async function Page({ params }: { params: Promise<{ id: string; q
     ctx.supabase.from('quiz_attempts').select('*, students(first_names, last_names)').eq('quiz_id', qid).order('started_at'),
   ]);
   if (!q) notFound();
+  const files = await listAttachments(ctx, 'quiz_attempt', (att ?? []).map((t: any) => t.id));
   const total = (qs ?? []).reduce((n: number, x: any) => n + Number(x.points), 0);
   const hidden = <><input type="hidden" name="section_id" value={id} /><input type="hidden" name="quiz_id" value={qid} /></>;
   return (
@@ -48,7 +51,8 @@ export default async function Page({ params }: { params: Promise<{ id: string; q
         <Card title={`Resultados (${att?.length ?? 0})`}>
           {att?.length ? <table className="table"><tbody>{att.map((t: any) => (
             <tr key={t.id}><td>{t.students?.last_names}, {t.students?.first_names}</td>
-              <td>{t.submitted_at ? <b>{t.score}/{t.max_score}{t.grade != null && ` · ${t.grade}`}</b> : <Badge color="amber">En curso</Badge>}</td></tr>))}</tbody></table> : <Empty>Nadie ha rendido aún.</Empty>}
+              <td>{t.submitted_at ? <b>{t.score}/{t.max_score}{t.grade != null && ` · ${t.grade}`}</b> : <Badge color="amber">En curso</Badge>}</td>
+              <td><AttachmentList items={files[t.id]} /></td></tr>))}</tbody></table> : <Empty>Nadie ha rendido aún.</Empty>}
         </Card>
       </div>
     </>

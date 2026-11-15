@@ -48,7 +48,11 @@ def main():
         # Evaluaciones en borrador
         ev = p.locator('[data-testid=evaluaciones-ocultas]').inner_text()
         check('Prueba borrador e2e' in ev, 'Informe: muestra el examen en borrador que nadie ve')
-        p.locator('[data-testid=evaluaciones-ocultas] li', has_text='Prueba borrador e2e').locator('button:has-text("Publicar")').click(); status_msg(p)
+        p.locator("[data-testid=evaluaciones-ocultas] li", has_text="Prueba borrador e2e").locator("button:has-text(\"Publicar\")").click()
+        import time as _t
+        for _ in range(40):
+            if sql(f"select published from quizzes where id='{qid}'") == 't': break
+            _t.sleep(0.5)
         check(sql(f"select published from quizzes where id='{qid}'") == 't', 'Publicar desde el informe: el examen queda visible')
         c.close()
 
