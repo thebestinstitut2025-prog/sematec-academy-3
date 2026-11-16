@@ -4,7 +4,7 @@ import { mailConfig, mailEnabled } from '@/lib/mailer';
 import { env } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
 import { fmtDateTime } from '@/lib/format';
-import { sendTestMail, testRecoveryMail } from '@/app/app/configuracion/correo-actions';
+import { diagnoseRecovery, sendTestMail, testRecoveryMail } from '@/app/app/configuracion/correo-actions';
 
 /** 📧 Estado del correo saliente (sin mostrar nunca la clave) y botón de prueba. */
 export async function MailStatus({ orgId }: { orgId?: string | null } = {}) {
@@ -31,6 +31,13 @@ export async function MailStatus({ orgId }: { orgId?: string | null } = {}) {
         <label className="block text-sm"><span className="label">Enviar la prueba a (vacío = a mí)</span><input className="input" type="email" name="to" placeholder="persona@correo.cl" data-testid="prueba-correo-a" /></label>
       </ActionForm></div>
       <div className="mt-2"><ActionForm action={testRecoveryMail} submitLabel="🔑 Probar «¿Olvidó su contraseña?» con mi cuenta" submitClass="btn-secondary btn-sm" /></div>
+      <div className="mt-4 rounded-xl bg-slate-50 p-3" data-testid="diagnostico-recuperar">
+        <p className="mb-2 text-sm font-semibold">🩺 ¿Un estudiante no puede recuperar su contraseña?</p>
+        <ActionForm action={diagnoseRecovery} submitLabel="Revisar" submitClass="btn-secondary btn-sm" resetOnSuccess={false}>
+          <input name="identifier" required placeholder="Correo o RUT del estudiante" className="input max-w-sm" />
+          <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="send" /> Enviarle el enlace ahora</label>
+        </ActionForm>
+      </div>
       <details className="mt-4" open={!!log?.length}>
         <summary className="cursor-pointer text-sm font-semibold">📬 Últimos correos enviados ({log?.length ?? 0})</summary>
         {log?.length ? (

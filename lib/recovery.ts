@@ -71,3 +71,25 @@ export async function sendAccessLink(email: string, o: { org?: string | null; ti
     return { ok: true };
   } catch (e) { return { ok: false, error: (e as Error).message }; }
 }
+
+/**
+ * Estudiante o profesor con ficha activa pero SIN cuenta: al pedir «¿Olvidó su contraseña?» con su correo
+ * (o su RUT), se crea su cuenta, se une a su ficha y se le envía el enlace para crear su contraseña.
+ */
+export async function activateFromFicha(identifier: string): Promise<'sent' | 'none' | 'mail_off'> {
+  if (!mailEnabled()) return 'mail_off';
+  const admin = createAdminClient();
+  const { data } = await admin.rpc('find_unlinked_person', { p_identifier: identifier });
+  const p = (data as { kind: string; person_id: string; organization_id: string; full_name: string; email: string }[] | null)?.[0];
+  if (!p?.email) return 'none';
+  const { ensureAuthUser } = await import('@/lib/users');
+  const u = await ensureAuthUser(p.email, p.full_name, 'password');
+  const { error } = await admin.rpc('activate_person_account', { p_kind: p.kind, p_person: p.person_id, p_user: u.id });
+  if (error && error.code !== '23505') throw new Error(`No se pudo activar la cuenta: ${error.message}`);
+  const r = await sendAccessLink(p.email, {
+    org: p.organization_id, title: 'Active su cuenta y cree su contraseña',
+    intro: `Hola ${p.full_name.split(' ')[0]}: pidió entrar a la plataforma. Su cuenta de ${p.kind === 'teacher' ? 'profesor' : 'estudiante'} ya está lista.`,
+  });
+  if (!r.ok) throw new Error(r.error ?? 'No se pudo enviar el correo');
+  return 'sent';
+}

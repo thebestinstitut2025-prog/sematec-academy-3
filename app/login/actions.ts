@@ -94,8 +94,13 @@ export async function requestReset(fd: FormData): Promise<ActionResult> {
   try {
     const { data: acc } = await admin.rpc('find_account', { p_identifier: raw });
     const account = (acc as Account[] | null)?.[0];
-    // Sin cuenta o cuenta no activa: misma respuesta (no se revela si el correo existe)
-    if (!account) return generic;
+    // Sin cuenta: si hay una ficha activa de estudiante o profesor con ese correo o RUT, se activa su cuenta y se le envía el enlace.
+    // Siempre la misma respuesta (no se revela si el correo existe).
+    if (!account) {
+      const { activateFromFicha } = await import('@/lib/recovery');
+      await activateFromFicha(raw);
+      return generic;
+    }
     const email = account.login_email ?? account.email;
     if (!email) return generic;
     const r = await sendRecoveryTo(account);

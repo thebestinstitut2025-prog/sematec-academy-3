@@ -99,7 +99,7 @@ export function ActionForm({
         </div>
       </div>
       {result && (
-        <p role="status" className={`mt-3 rounded-lg px-3 py-2 text-sm ${result.queued ? 'bg-amber-50 text-amber-900' : result.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
+        <p role="status" className={`mt-3 whitespace-pre-line rounded-lg px-3 py-2 text-sm ${result.queued ? 'bg-amber-50 text-amber-900' : result.ok ? 'bg-emerald-50 text-emerald-800' : 'bg-red-50 text-red-700'}`}>
           {result.queued ? result.message : result.ok ? `✓ ${result.message ?? 'Guardado en la nube.'}` : `✕ ${result.error}`}
         </p>
       )}
