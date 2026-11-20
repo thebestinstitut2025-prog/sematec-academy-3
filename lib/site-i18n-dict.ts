@@ -11,7 +11,7 @@ export const isSiteLang = (l: unknown): l is SiteLang => typeof l === 'string' &
 type D = Record<string, string>;
 
 const es: D = {
-  'nav.home': 'Inicio', 'nav.courses': 'Cursos', 'nav.about': 'Nosotros', 'nav.contact': 'Contacto', 'nav.status': 'Estado de solicitud',
+  'nav.home': 'Inicio', 'nav.courses': 'Cursos', 'nav.about': 'Nosotros', 'nav.news': 'Novedades', 'home.news.title': 'Novedades', 'home.news.all': 'Ver todas las novedades', 'nav.contact': 'Contacto', 'nav.status': 'Estado de solicitud',
   'nav.login': 'Ingresar', 'nav.app': 'App', 'nav.menu': 'Menú', 'lang.label': 'Idioma',
   'footer.contact': 'Contacto', 'footer.links': 'Enlaces', 'footer.verify': 'Verificar un certificado', 'footer.terms': 'Términos y condiciones',
   'footer.privacy': 'Política de privacidad', 'footer.app': 'Descargar la app', 'footer.whatsapp': 'WhatsApp',
@@ -85,7 +85,7 @@ const es: D = {
 };
 
 const en: D = {
-  'nav.home': 'Home', 'nav.courses': 'Courses', 'nav.about': 'About us', 'nav.contact': 'Contact', 'nav.status': 'Application status',
+  'nav.home': 'Home', 'nav.courses': 'Courses', 'nav.about': 'About us', 'nav.news': 'News', 'home.news.title': 'News', 'home.news.all': 'See all news', 'nav.contact': 'Contact', 'nav.status': 'Application status',
   'nav.login': 'Sign in', 'nav.app': 'App', 'nav.menu': 'Menu', 'lang.label': 'Language',
   'footer.contact': 'Contact', 'footer.links': 'Links', 'footer.verify': 'Verify a certificate', 'footer.terms': 'Terms and conditions',
   'footer.privacy': 'Privacy policy', 'footer.app': 'Download the app', 'footer.whatsapp': 'WhatsApp',
@@ -159,7 +159,7 @@ const en: D = {
 };
 
 const fr: D = {
-  'nav.home': 'Accueil', 'nav.courses': 'Formations', 'nav.about': 'À propos', 'nav.contact': 'Contact', 'nav.status': 'Suivi de demande',
+  'nav.home': 'Accueil', 'nav.courses': 'Formations', 'nav.about': 'À propos', 'nav.news': 'Actualités', 'home.news.title': 'Actualités', 'home.news.all': 'Toutes les actualités', 'nav.contact': 'Contact', 'nav.status': 'Suivi de demande',
   'nav.login': 'Se connecter', 'nav.app': 'Appli', 'nav.menu': 'Menu', 'lang.label': 'Langue',
   'footer.contact': 'Contact', 'footer.links': 'Liens', 'footer.verify': 'Vérifier un certificat', 'footer.terms': 'Conditions générales',
   'footer.privacy': 'Politique de confidentialité', 'footer.app': 'Télécharger l’appli', 'footer.whatsapp': 'WhatsApp',
@@ -233,7 +233,7 @@ const fr: D = {
 };
 
 const pt: D = {
-  'nav.home': 'Início', 'nav.courses': 'Cursos', 'nav.about': 'Sobre nós', 'nav.contact': 'Contato', 'nav.status': 'Status da inscrição',
+  'nav.home': 'Início', 'nav.courses': 'Cursos', 'nav.about': 'Sobre nós', 'nav.news': 'Novidades', 'home.news.title': 'Novidades', 'home.news.all': 'Ver todas as novidades', 'nav.contact': 'Contato', 'nav.status': 'Status da inscrição',
   'nav.login': 'Entrar', 'nav.app': 'App', 'nav.menu': 'Menu', 'lang.label': 'Idioma',
   'footer.contact': 'Contato', 'footer.links': 'Links', 'footer.verify': 'Verificar um certificado', 'footer.terms': 'Termos e condições',
   'footer.privacy': 'Política de privacidade', 'footer.app': 'Baixar o app', 'footer.whatsapp': 'WhatsApp',

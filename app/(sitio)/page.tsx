@@ -5,6 +5,8 @@ import { CourseCard } from '@/components/course-card';
 import { PriceTag } from '@/components/price-tag';
 import { getT } from '@/lib/site-i18n';
 import { registrationOpen } from '@/lib/site';
+import { PostCard } from '@/components/site-post';
+import type { SitePost } from '@/lib/site-posts';
 
 const FEAT_ICONS = ['🎥', '📱', '🎓', '🔒', '🔎', '🧭'];
 
@@ -27,6 +29,8 @@ export default async function Home() {
   const avail = await offeringAvailability(site.organization_id);
   const hero = mediaUrl(site.hero_asset_id);
   const reg = await registrationOpen(site.organization_id);
+  const { data: newsData } = await anonClient().rpc('public_site_posts', { p_org: site.organization_id, p_limit: 3 });
+  const news = (newsData ?? []) as SitePost[];
   const areas = new Set((all ?? []).map((c: any) => c.category || c.kind || 'curso')).size;
   const stats: [string, string][] = [
     [String(all?.length ?? 0), t('home.stat.courses')],
@@ -153,6 +157,15 @@ export default async function Home() {
           <Link href="/descargar" className="btn shrink-0 bg-white px-6 py-3 text-base text-ink hover:bg-sky-50">{t('home.app.cta')}</Link>
         </div>
       </section>
+
+      {news.length > 0 && (
+        <section className="mx-auto max-w-7xl px-4 pt-20 lg:px-8" data-testid="novedades">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <h2 className="text-2xl font-black md:text-3xl">{t('home.news.title')}</h2>
+            <Link href="/publicaciones" className="link font-semibold">{t('home.news.all')} →</Link>
+          </div>
+          <div className="mt-6 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">{news.map((p) => <PostCard key={p.id} post={p} />)}</div>
+        </section>)}
 
       {site.about_text && (
         <section className="mx-auto max-w-7xl px-4 pt-20 lg:px-8">

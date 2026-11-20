@@ -16,7 +16,7 @@ const csp = [
   // Next.js necesita scripts en línea propios; se prohíbe eval y cualquier script de otro sitio
   `script-src ${list("'self'", "'unsafe-inline'", "'wasm-unsafe-eval'", onlyoffice)}`, // WebAssembly local para fondos virtuales
   "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob: https:",
+  `img-src ${list("'self'", 'data:', 'blob:', 'https:', supabase)}`,
   "font-src 'self' data:",
   `connect-src ${list("'self'", supabase, wsOrigin(process.env.NEXT_PUBLIC_SUPABASE_URL), livekit, wsOrigin(livekit), 'https://*.livekit.cloud', 'wss://*.livekit.cloud',
     'https://storage.googleapis.com' /* modelo de segmentación de fondos (datos, no código) */, onlyoffice, wsOrigin(onlyoffice))}`,
