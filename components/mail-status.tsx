@@ -4,7 +4,7 @@ import { mailConfig, mailEnabled } from '@/lib/mailer';
 import { env } from '@/lib/env';
 import { createClient } from '@/lib/supabase/server';
 import { fmtDateTime } from '@/lib/format';
-import { diagnoseRecovery, sendTestMail, testRecoveryMail } from '@/app/app/configuracion/correo-actions';
+import { diagnoseRecovery, resendPendingMail, sendTestMail, testRecoveryMail } from '@/app/app/configuracion/correo-actions';
 
 /** 📧 Estado del correo saliente (sin mostrar nunca la clave) y botón de prueba. */
 export async function MailStatus({ orgId }: { orgId?: string | null } = {}) {
@@ -18,9 +18,16 @@ export async function MailStatus({ orgId }: { orgId?: string | null } = {}) {
     ['Enlaces de los correos', site, !/localhost|127\.0\.0\.1/.test(site)],
   ];
   const sb = await createClient();
-  let q = sb.from('mail_log').select('id, created_at, to_email, subject, kind, status, error').order('created_at', { ascending: false }).limit(25);
+  let q = sb.from('mail_log').select('id, created_at, to_email, subject, kind, status, error, text_body, resent_at').order('created_at', { ascending: false }).limit(50);
   if (orgId) q = q.or(`organization_id.eq.${orgId},organization_id.is.null`);
-  const { data: log } = await q;
+  let { data: log, error: le } = await q;
+  if (le) { // sin la actualización «Correos guardados»
+    let q2 = sb.from('mail_log').select('id, created_at, to_email, subject, kind, status, error').order('created_at', { ascending: false }).limit(50);
+    if (orgId) q2 = q2.or(`organization_id.eq.${orgId},organization_id.is.null`);
+    log = (await q2).data as typeof log;
+  }
+  const since = Date.now() - 14 * 86400e3;
+  const pending = (log ?? []).filter((m: any) => m.status !== 'sent' && !m.resent_at && m.text_body && new Date(m.created_at).getTime() > since).length;
   return (
     <Card title="📧 Correo del sistema" className="mb-6" id="correo">
       <table className="w-full text-sm" data-testid="estado-correo"><tbody>{rows.map(([k, v, okv]) => (
@@ -38,13 +45,19 @@ export async function MailStatus({ orgId }: { orgId?: string | null } = {}) {
           <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="send" /> Enviarle el enlace ahora</label>
         </ActionForm>
       </div>
+      {pending > 0 && (
+        <div className="mt-4 rounded-xl bg-amber-50 p-3 text-sm text-amber-900" data-testid="correos-pendientes">
+          <p>📮 <b>{pending} correo(s) guardado(s) sin enviar</b> (el correo falló cuando se enviaron). Cuando el correo funcione, reenvíelos: llegan igual que el original.</p>
+          <ActionForm action={resendPendingMail} submitLabel="📨 Reenviar pendientes" submitClass="btn-primary btn-sm mt-2" />
+        </div>)}
       <details className="mt-4" open={!!log?.length}>
-        <summary className="cursor-pointer text-sm font-semibold">📬 Últimos correos enviados ({log?.length ?? 0})</summary>
+        <summary className="cursor-pointer text-sm font-semibold">📬 Correos guardados ({log?.length ?? 0})</summary>
         {log?.length ? (
           <div className="mt-2 overflow-x-auto"><table className="table text-xs" data-testid="registro-correos"><thead><tr><th>Fecha</th><th>Para</th><th>Asunto</th><th>Estado</th></tr></thead>
             <tbody>{log.map((m: any) => (
-              <tr key={m.id}><td className="whitespace-nowrap">{fmtDateTime(m.created_at)}</td><td>{m.to_email}</td><td>{m.subject}</td>
-                <td>{m.status === 'sent' ? <span className="text-emerald-700">✓ Enviado</span> : <span className="text-red-700" title={m.error ?? ''}>✕ {m.status === 'off' ? 'Correo no configurado' : 'Falló'}{m.error ? `: ${String(m.error).slice(0, 90)}` : ''}</span>}</td></tr>))}</tbody></table></div>
+              <tr key={m.id}><td className="whitespace-nowrap">{fmtDateTime(m.created_at)}</td><td>{m.to_email}</td><td>{m.subject}
+                  {m.text_body && <details><summary className="cursor-pointer text-[11px] text-brand-700">Ver contenido</summary><pre className="mt-1 max-w-md whitespace-pre-wrap text-[11px] text-slate-600">{String(m.text_body).slice(0, 3000)}</pre></details>}</td>
+                <td>{m.status === 'sent' ? <span className="text-emerald-700">✓ {m.resent_at ? 'Reenviado' : 'Enviado'}</span> : <span className="text-red-700" title={m.error ?? ''}>✕ {m.status === 'off' ? 'Correo no configurado' : 'Falló'}{m.error ? `: ${String(m.error).slice(0, 90)}` : ''}</span>}</td></tr>))}</tbody></table></div>
         ) : <p className="mt-2 text-xs text-slate-500">Aún no se han enviado correos.</p>}
       </details>
     </Card>

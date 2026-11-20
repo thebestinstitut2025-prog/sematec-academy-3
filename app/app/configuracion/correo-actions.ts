@@ -1,4 +1,5 @@
 'use server';
+import { revalidatePath } from 'next/cache';
 import { can, getContext } from '@/lib/context';
 import { mailEnabled, mailLayout, sendMail } from '@/lib/mailer';
 import { env } from '@/lib/env';
@@ -31,7 +32,12 @@ export async function sendTestMail(fd?: FormData): Promise<ActionResult> {
     await sendMail(to, 'Prueba de correo de la plataforma',
       mailLayout('SEMATEC ACADEMY', '✓ El correo funciona', `<p>Este es un correo de prueba. Los enlaces de los correos apuntan a <b>${env.siteUrl()}</b>.</p>`),
       `El correo funciona. Los enlaces apuntan a ${env.siteUrl()}.`, undefined, { org: ctx.orgId, kind: 'prueba', by: ctx.user.id });
-    return { ok: true, message: `Correo de prueba enviado a ${to}. Revise su bandeja (y «Spam»).` };
+    // El correo ya funciona: se envían los que habían quedado pendientes
+    const { resendPending } = await import('@/lib/mailer');
+    const r = await resendPending(ctx.orgId).catch(() => null);
+    const extra = r?.sent ? ` 📨 Además se enviaron ${r.sent} correo(s) que habían quedado pendientes.` : '';
+    revalidatePath('/app/configuracion');
+    return { ok: true, message: `Correo de prueba enviado a ${to}. Revise su bandeja (y «Spam»).${extra}` };
   } catch (e) {
     return { ok: false, error: (e as Error).message };
   }
@@ -83,5 +89,18 @@ export async function diagnoseRecovery(fd: FormData): Promise<ActionResult> {
       } catch (e) { lines.push(`✕ Error al enviar: ${(e as Error).message}`); }
     }
     return ok(lines.join('\n'));
+  });
+}
+
+/** 📨 Reenviar los correos que no se pudieron enviar (por ejemplo, mientras la clave del correo estaba mal). */
+export async function resendPendingMail(): Promise<ActionResult> {
+  return guard(async () => {
+    const ctx = await getContext();
+    if (!ctx.isOwner && !ctx.isPlatformAdmin && !can(ctx, 'settings.admin')) return fail('Solo la administración puede reenviar correos.');
+    const { resendPending } = await import('@/lib/mailer');
+    const r = await resendPending(ctx.orgId, 100);
+    revalidatePath('/app/configuracion');
+    if (r.error && !r.sent) return fail(`No se pudo reenviar: ${r.error}`);
+    return ok(`📨 ${r.sent} correo(s) reenviado(s).${r.left ? ` Quedan ${r.left} pendiente(s).` : ''}${r.error ? ` ⚠ ${r.error}` : ''}`);
   });
 }

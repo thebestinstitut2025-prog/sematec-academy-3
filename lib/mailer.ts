@@ -19,17 +19,25 @@ export const mailEnabled = () => { const c = mailConfig(); return !!c.host && !!
 
 export type MailMeta = { org?: string | null; kind?: string; by?: string | null };
 
-/** Guarda en el registro de correos si se envió o por qué falló (para revisarlo en Configuración → Correo). */
-async function logMail(to: string, subject: string, status: 'sent' | 'failed' | 'off', error: string | null, meta?: MailMeta) {
+// Correos con enlaces de acceso: nunca se guarda su contenido (el enlace da entrada a la cuenta)
+const SECRET_KINDS = new Set(['recuperar', 'cuenta', 'acceso', 'invitacion', 'mfa']);
+/** Guarda en el registro de correos si se envió o por qué falló, con su contenido para poder reenviarlo. */
+async function logMail(to: string, subject: string, status: 'sent' | 'failed' | 'off', error: string | null, meta?: MailMeta, body?: { html: string; text: string; files?: boolean }) {
   try {
     const { createAdminClient } = await import('@/lib/supabase/admin');
-    await createAdminClient().from('mail_log').insert({ organization_id: meta?.org ?? null, to_email: to.slice(0, 254), subject: subject.slice(0, 300), kind: meta?.kind ?? 'general', status, error: error?.slice(0, 500) ?? null, sent_by: meta?.by ?? null });
+    const keep = body && !SECRET_KINDS.has(meta?.kind ?? '') && !body.files;
+    await createAdminClient().from('mail_log').insert({
+      organization_id: meta?.org ?? null, to_email: to.slice(0, 254), subject: subject.slice(0, 300), kind: meta?.kind ?? 'general', status,
+      error: error?.slice(0, 500) ?? null, sent_by: meta?.by ?? null,
+      ...(keep ? { html: body!.html.slice(0, 200000), text_body: body!.text.slice(0, 50000) } : {}),
+    });
   } catch { /* el registro nunca impide enviar */ }
 }
 
 export async function sendMail(to: string, subject: string, html: string, text: string, attachments?: { filename: string; content: Buffer | Uint8Array; contentType?: string }[], meta?: MailMeta) {
   const c = mailConfig();
-  if (!c.host || !c.from) { await logMail(to, subject, 'off', 'Correo no configurado', meta); throw new Error('El correo no está configurado: en Vercel agregue SMTP_USER (su Gmail) y SMTP_PASS (contraseña de aplicación) y haga «Redeploy».'); }
+  const body = { html, text, files: !!attachments?.length };
+  if (!c.host || !c.from) { await logMail(to, subject, 'off', 'Correo no configurado', meta, body); throw new Error('El correo no está configurado: en Vercel agregue SMTP_USER (su Gmail) y SMTP_PASS (contraseña de aplicación) y haga «Redeploy».'); }
   if (!/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(to)) throw new Error('El correo del destinatario no es válido.');
   const port = c.port;
   const local = /^(localhost|127\.0\.0\.1)$/.test(c.host);
@@ -44,10 +52,49 @@ export async function sendMail(to: string, subject: string, html: string, text: 
     await t.sendMail({ from: c.from, to, subject, html, text, attachments: attachments?.map((a) => ({ ...a, content: Buffer.from(a.content) })) });
   } catch (e) {
     const msg = mailErrorText(e);
-    await logMail(to, subject, 'failed', msg, meta);
+    await logMail(to, subject, 'failed', msg, meta, body);
     throw new Error(msg);
   }
-  await logMail(to, subject, 'sent', null, meta);
+  await logMail(to, subject, 'sent', null, meta, body);
+}
+
+/**
+ * 📨 Reenvía los correos que quedaron pendientes (no se pudieron enviar) de los últimos 14 días.
+ * Si el correo sigue fallando se detiene en el primero (no gasta intentos).
+ */
+export async function resendPending(org?: string | null, limit = 50): Promise<{ sent: number; failed: number; left: number; error?: string }> {
+  const { createAdminClient } = await import('@/lib/supabase/admin');
+  const admin = createAdminClient();
+  const since = new Date(Date.now() - 14 * 86400e3).toISOString();
+  let q = admin.from('mail_log').select('id, to_email, subject, html, text_body, attempts').in('status', ['failed', 'off'])
+    .is('resent_at', null).not('html', 'is', null).gte('created_at', since).lt('attempts', 6).order('created_at').limit(limit);
+  if (org) q = q.or(`organization_id.eq.${org},organization_id.is.null`);
+  const { data } = await q;
+  const c = mailConfig();
+  let sent = 0; let failed = 0; let error: string | undefined;
+  if (c.host && c.from) {
+    const t = nodemailer.createTransport({
+      host: c.host, port: c.port, secure: c.port === 465,
+      auth: process.env.SMTP_USER ? { user: process.env.SMTP_USER.trim(), pass: (process.env.SMTP_PASS ?? '').replace(/\s+/g, '') } : undefined,
+      ignoreTLS: /^(localhost|127\.0\.0\.1)$/.test(c.host), requireTLS: !/^(localhost|127\.0\.0\.1)$/.test(c.host) && c.port !== 465,
+      connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 20000,
+    });
+    for (const m of data ?? []) {
+      try {
+        await t.sendMail({ from: c.from, to: m.to_email, subject: m.subject, html: m.html!, text: m.text_body ?? '' });
+        await admin.from('mail_log').update({ status: 'sent', error: null, resent_at: new Date().toISOString(), attempts: (m.attempts ?? 1) + 1 }).eq('id', m.id);
+        sent++;
+      } catch (e) {
+        error = mailErrorText(e); failed++;
+        await admin.from('mail_log').update({ error, attempts: (m.attempts ?? 1) + 1 }).eq('id', m.id);
+        break;
+      }
+    }
+  } else error = 'El correo no está configurado.';
+  const { count } = await (org ? admin.from('mail_log').select('id', { count: 'exact', head: true }).or(`organization_id.eq.${org},organization_id.is.null`)
+    : admin.from('mail_log').select('id', { count: 'exact', head: true }))
+    .in('status', ['failed', 'off']).is('resent_at', null).not('html', 'is', null).gte('created_at', since).lt('attempts', 6);
+  return { sent, failed, left: count ?? 0, error };
 }
 
 /** Traduce los errores del servidor de correo a instrucciones claras. */
