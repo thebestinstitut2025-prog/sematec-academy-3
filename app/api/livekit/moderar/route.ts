@@ -6,7 +6,7 @@ import { allowedSources, MOD_ROLES, type RoomPolicy } from '@/lib/room-policy';
 
 const UUID = /^[0-9a-f-]{36}$/i;
 const IDENT = /^(inv_)?[0-9a-f-]{36}$/i; // usuarios y también invitados externos (inv_…)
-const ACTIONS = new Set(['mute', 'mute_all', 'remove', 'allow_share', 'revoke_share', 'lower_hand', 'apply_policy', 'cam_off_all']);
+const ACTIONS = new Set(['mute', 'mute_all', 'remove', 'allow_share', 'revoke_share', 'lower_hand', 'apply_policy', 'cam_off_all', 'cam_off', 'lower_all_hands', 'make_cohost', 'remove_cohost']);
 
 /**
  * Controles del anfitrión (silenciar, silenciar a todos, expulsar, permitir compartir pantalla, bajar la mano).
@@ -15,7 +15,7 @@ const ACTIONS = new Set(['mute', 'mute_all', 'remove', 'allow_share', 'revoke_sh
 export async function POST(request: NextRequest) {
   const b = await request.json().catch(() => ({}));
   const { session, action, identity } = b as { session?: string; action?: string; identity?: string };
-  if (!session || !UUID.test(session) || !action || !ACTIONS.has(action) || (!['mute_all', 'apply_policy', 'cam_off_all'].includes(action) && (!identity || !IDENT.test(identity))))
+  if (!session || !UUID.test(session) || !action || !ACTIONS.has(action) || (!['mute_all', 'apply_policy', 'cam_off_all', 'lower_all_hands'].includes(action) && (!identity || !IDENT.test(identity))))
     return NextResponse.json({ error: 'Solicitud inválida' }, { status: 400 });
   const supabase = await createClient();
   const { data: { user } } = await supabase.auth.getUser();
@@ -74,6 +74,31 @@ export async function POST(request: NextRequest) {
     } else if (action === 'cam_off_all') {
       for (const p of (await svc.listParticipants(room)).filter((x) => x.identity !== user.id))
         for (const t of p.tracks) if (t.source === TrackSource.CAMERA && !t.muted) await svc.mutePublishedTrack(room, p.identity, t.sid, true);
+    } else if (action === 'cam_off') {
+      // 📷 Detener el video de una persona (ella puede volver a encenderlo si la sala lo permite)
+      const p = await svc.getParticipant(room, identity!);
+      for (const t of p.tracks) if (t.source === TrackSource.CAMERA && !t.muted) await svc.mutePublishedTrack(room, p.identity, t.sid, true);
+    } else if (action === 'lower_all_hands') {
+      for (const p of await svc.listParticipants(room))
+        if (p.attributes?.hand) await svc.updateParticipant(room, p.identity, { attributes: { ...(p.attributes ?? {}), hand: '' } });
+    } else if (action === 'make_cohost' || action === 'remove_cohost') {
+      // 👑 Co-anfitrión: el rol queda en la base de datos (lo que vale para moderar) y en la sala (para su pantalla)
+      if (!UUID.test(identity!)) return NextResponse.json({ error: 'Un invitado externo no puede ser co-anfitrión.' }, { status: 400 });
+      const { data: role, error } = await supabase.rpc('conference_set_cohost', { p_session: session, p_user: identity, p_on: action === 'make_cohost' });
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 });
+      const p = await svc.getParticipant(room, identity!);
+      let md: Record<string, unknown> = {}; try { md = JSON.parse(p.metadata || '{}'); } catch { /* */ }
+      const all = [TrackSource.CAMERA, TrackSource.MICROPHONE, TrackSource.SCREEN_SHARE, TrackSource.SCREEN_SHARE_AUDIO];
+      let sources = all;
+      if (action === 'remove_cohost') {
+        const { data: ss } = await supabase.from('conference_sessions').select('room_policy').eq('id', session).maybeSingle();
+        const policy = (ss?.room_policy ?? {}) as RoomPolicy;
+        sources = allowedSources(policy, policy.share ? all : [TrackSource.CAMERA, TrackSource.MICROPHONE]);
+      }
+      await svc.updateParticipant(room, identity!, {
+        metadata: JSON.stringify({ ...md, role }),
+        permission: { canSubscribe: true, canPublish: true, canPublishData: true, canUpdateMetadata: true, canPublishSources: sources },
+      });
     } else if (action === 'lower_hand') {
       const p = await svc.getParticipant(room, identity!);
       await svc.updateParticipant(room, identity!, { attributes: { ...(p.attributes ?? {}), hand: '' } });

@@ -17,6 +17,7 @@ import { EvalBanner, EvalPanel, useEvalLaunch } from './eval';
 import { useBoard, Whiteboard } from './whiteboard';
 import { usePolls, PollPanel, PollCard } from './poll';
 import { InvitePanel } from './invite';
+import { PreJoinCheck } from './prejoin';
 import { IconMin } from '@/components/win-icons';
 import { useTools, useMySettings, useApplySettings, useShortcuts, ConnectionChip, AppStage, ToolBanners, ToolsHub, NotesPanel, QAPanel, AppsPanel,
   RoomConfigPanel, MySettingsPanel, AttendancePanel, PrivateMessages, isModP, type Tools } from './tools';
@@ -44,6 +45,7 @@ export function Room(props: Opts) {
   const [error, setError] = useState<string | null>(null);
   const [own, setOwn] = useState<Conn | null>(null); // sin anfitrión (respaldo)
   const [waiting, setWaiting] = useState(false);
+  const [pre, setPre] = useState<NonNullable<Opts['prejoin']>>({ audio: false, video: false });
   const stopWait = useRef(false);
   useEffect(() => () => { stopWait.current = true; }, []);
   const here = ctl?.active?.opts.sessionId === props.sessionId;
@@ -61,15 +63,15 @@ export function Room(props: Opts) {
         if (r.status === 202) { setWaiting(true); await new Promise((ok) => setTimeout(ok, 3000)); if (stopWait.current) return; continue; }
         setWaiting(false);
         if (!r.ok) throw new Error(j.error ?? 'No se pudo obtener acceso');
-        if (ctl) { if (ctl.active) ctl.leave(); ctl.join(j, props); } else setOwn(j);
+        if (ctl) { if (ctl.active) ctl.leave(); ctl.join(j, { ...props, prejoin: pre }); } else setOwn(j);
         return;
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Sin conexión con el servidor');
     } finally { setBusy(false); }
-  }, [props, ctl]);
+  }, [props, ctl, pre]);
 
-  if (own) return <RoomShell conn={own} opts={props} view="full" onLeave={() => setOwn(null)} onError={(m) => { setError(m); setOwn(null); }} />;
+  if (own) return <RoomShell conn={own} opts={{ ...props, prejoin: pre }} view="full" onLeave={() => setOwn(null)} onError={(m) => { setError(m); setOwn(null); }} />;
   return (
     <div className="mx-auto mt-10 max-w-lg card card-pad text-center">
       <h1 className="text-xl font-bold">{props.title}</h1>
@@ -87,7 +89,10 @@ export function Room(props: Opts) {
             <p className="mt-1">El anfitrión lo dejará entrar en un momento. No cierre esta página.</p>
             <button className="mt-3 text-xs underline" onClick={() => { stopWait.current = true; setWaiting(false); setBusy(false); }}>Cancelar</button>
           </div>
-        ) : <button onClick={join} disabled={busy} className="btn-primary mt-5" data-testid="entrar-sala">{busy ? 'Conectando…' : 'Entrar a la sala'}</button>}
+        ) : (<>
+          <PreJoinCheck value={pre} onChange={setPre} />
+          <button onClick={join} disabled={busy} className="btn-primary mt-5" data-testid="entrar-sala">{busy ? 'Conectando…' : 'Entrar a la sala'}</button>
+        </>)}
         <p className="mt-3 text-xs text-slate-500">Dentro de la sala puede <b>minimizarla</b> para navegar por el sistema (y compartir su pantalla) sin desconectarse.</p>
       </>)}
       {error && <p className="mt-4 rounded bg-red-50 p-2 text-sm text-red-700">{error}</p>}
@@ -147,7 +152,7 @@ function useElapsed() {
   return `${s >= 3600 ? `${Math.floor(s / 3600)}:` : ''}${String(Math.floor((s % 3600) / 60)).padStart(s >= 3600 ? 2 : 1, '0')}:${String(s % 60).padStart(2, '0')}`;
 }
 
-function Stage({ sessionId, title, recording, chatEnabled, orgId, sectionId, guest, conn, view, onMinimize, onExpand, group, onGroup, onMain }: Opts & {
+function Stage({ sessionId, title, recording, chatEnabled, orgId, sectionId, guest, prejoin, conn, view, onMinimize, onExpand, group, onGroup, onMain }: Opts & {
   conn: Conn; view: View; onMinimize?: () => void; onExpand?: () => void; group: number; onGroup: (c: Conn, g: number) => void; onMain: () => void;
 }) {
   const room = useRoomContext();
@@ -175,7 +180,9 @@ function Stage({ sessionId, title, recording, chatEnabled, orgId, sectionId, gue
   const [moreDesk, setMoreDesk] = useState(false);
   const evals = useEvalLaunch();
   const [, force] = useState(0);
-  const mod = conn.moderator;
+  // 👑 Co-anfitrión nombrado durante la clase: el servidor cambia su rol (lo que vale para moderar está en la base de datos)
+  let liveRole = ''; try { liveRole = JSON.parse(localParticipant.metadata || '{}').role ?? ''; } catch { /* */ }
+  const mod = conn.moderator || liveRole === 'moderator';
   const elapsed = useElapsed();
   const board = useBoard(mod);
   const polls = usePolls(mod);
@@ -191,11 +198,33 @@ function Stage({ sessionId, title, recording, chatEnabled, orgId, sectionId, gue
   // Repintar cuando cambian atributos (mano levantada) o permisos
   useEffect(() => {
     const f = () => force((n) => n + 1);
-    room.on(RoomEvent.ParticipantAttributesChanged, f).on(RoomEvent.ParticipantPermissionsChanged, f);
-    return () => { room.off(RoomEvent.ParticipantAttributesChanged, f).off(RoomEvent.ParticipantPermissionsChanged, f); };
+    room.on(RoomEvent.ParticipantAttributesChanged, f).on(RoomEvent.ParticipantPermissionsChanged, f).on(RoomEvent.ParticipantMetadataChanged, f);
+    return () => { room.off(RoomEvent.ParticipantAttributesChanged, f).off(RoomEvent.ParticipantPermissionsChanged, f).off(RoomEvent.ParticipantMetadataChanged, f); };
   }, [room]);
 
   const say = useCallback((m: string) => { setToast(m); setTimeout(() => setToast(null), m.startsWith('📣') ? 9000 : 3500); }, []);
+  // 🎥 Entrar con el micrófono / la cámara elegidos en la vista previa
+  const applied = useRef(false);
+  useEffect(() => {
+    if (!prejoin || applied.current || (!prejoin.audio && !prejoin.video)) return;
+    const go = async () => {
+      if (applied.current) return; applied.current = true;
+      if (prejoin.audio) await localParticipant.setMicrophoneEnabled(true, prejoin.audioDeviceId ? { deviceId: prejoin.audioDeviceId } : undefined)
+        .catch(() => say('🎙 No se pudo activar su micrófono: puede que el anfitrión lo tenga desactivado.'));
+      if (prejoin.video) await localParticipant.setCameraEnabled(true, prejoin.videoDeviceId ? { deviceId: prejoin.videoDeviceId } : undefined)
+        .catch(() => say('📷 No se pudo activar su cámara: puede que el anfitrión la tenga desactivada.'));
+    };
+    if (room.state === 'connected') go(); else room.once(RoomEvent.Connected, go);
+  }, [room]); // eslint-disable-line react-hooks/exhaustive-deps
+  // 🙋 El anfitrión le pide activar el micrófono o la cámara (nunca se activan sin su permiso)
+  const [ask, setAsk] = useState<{ what: 'mic' | 'cam'; by: string } | null>(null);
+  const { send: sendAsk } = useDataChannel('pedir', (m) => {
+    const w = dec.decode(m.payload); if (w === 'mic' || w === 'cam') setAsk({ what: w, by: m.from?.name ?? 'El anfitrión' });
+  });
+  const askTo = useCallback((p: Participant, what: 'mic' | 'cam') => {
+    sendAsk(enc.encode(what), { reliable: true, destinationIdentities: [p.identity] });
+    say(what === 'mic' ? `🙋 Se le pidió a ${p.name} que active su micrófono.` : `📷 Se le pidió a ${p.name} que active su cámara.`);
+  }, [sendAsk, say]);
   const controls = useControls(mod && !group);
   const [my, setMy] = useMySettings();
   useApplySettings(my);
@@ -412,7 +441,7 @@ function Stage({ sessionId, title, recording, chatEnabled, orgId, sectionId, gue
             </div>
             {panel === 'chat' && <PrivateMessages tools={tools} me={localParticipant.identity} />}
             {panel === 'chat' && <ChatPanel enabled={(chatEnabled && tools.can('chat')) || mod} chat={chat} orgId={orgId} sectionId={sectionId} say={say} attachments={!guest} />}
-            {panel === 'people' && <PeoplePanel mod={mod} me={localParticipant.identity} participants={participants} moderate={moderate} spot={controls.spot} onSpot={group ? undefined : controls.spotlight} tools={tools} say={say} />}
+            {panel === 'people' && <PeoplePanel mod={mod} me={localParticipant.identity} participants={participants} moderate={moderate} spot={controls.spot} onSpot={group ? undefined : controls.spotlight} tools={tools} say={say} askTo={askTo} />}
             {panel === 'tools' && <ToolsHub mod={mod} tools={tools} open={(p) => setPanel(p)} onPip={openPip} participants={participants.length}
               onPick={() => tools.pick(participants.filter((p) => !isModP(p) && p.identity !== localParticipant.identity))} />}
             {panel === 'notes' && <NotesPanel tools={tools} mod={mod} title={title} />}
@@ -448,6 +477,16 @@ function Stage({ sessionId, title, recording, chatEnabled, orgId, sectionId, gue
           <p className="mt-2 text-xs opacity-60">{isAndroid ? 'También puede compartir desde un computador con Chrome, Edge o Firefox.' : 'En iPhone y iPad, Apple no permite que el navegador transmita la pantalla: use la cámara trasera, envíe archivos al chat o entre desde un computador.'}</p>
         </div>)}
       {toast && <div className="absolute bottom-24 left-1/2 z-30 -translate-x-1/2 rounded-lg bg-black/80 px-4 py-2 text-sm">{toast}</div>}
+      {ask && (
+        <div className="absolute left-1/2 top-16 z-40 w-[min(92vw,26rem)] -translate-x-1/2 rounded-xl bg-blue-700 p-4 text-sm shadow-2xl" role="alertdialog" data-testid="pedido-anfitrion">
+          <p className="font-semibold">{ask.what === 'mic' ? `🙋 ${ask.by} le pide que active su micrófono` : `📷 ${ask.by} le pide que active su cámara`}</p>
+          <div className="mt-3 flex gap-2">
+            <button className="rounded-lg bg-white px-3 py-1.5 font-semibold text-blue-800" data-testid="aceptar-pedido"
+              onClick={() => { (ask.what === 'mic' ? localParticipant.setMicrophoneEnabled(true) : localParticipant.setCameraEnabled(true)).catch(() => say('No se pudo activar: revise los permisos del navegador.')); setAsk(null); }}>
+              {ask.what === 'mic' ? 'Activar micrófono' : 'Activar cámara'}</button>
+            <button className="rounded-lg bg-white/20 px-3 py-1.5" onClick={() => setAsk(null)}>Ahora no</button>
+          </div>
+        </div>)}
 
       {narrow && more && (<>
         <div className="absolute inset-0 z-30 bg-black/50" onClick={() => setMore(false)} aria-hidden />
@@ -675,13 +714,27 @@ function ChatPanel({ enabled, chat, orgId, sectionId, say, attachments = true }:
   );
 }
 
-function PeoplePanel({ mod, me, participants, moderate, spot, onSpot, tools, say }: { mod: boolean; me: string; participants: Participant[]; moderate: (a: string, id?: string) => void; spot?: string | null; onSpot?: (id: string | null) => void; tools: Tools; say: (m: string) => void }) {
+function PeoplePanel({ mod, me, participants, moderate, spot, onSpot, tools, say, askTo }: { mod: boolean; me: string; participants: Participant[]; moderate: (a: string, id?: string) => void; spot?: string | null; onSpot?: (id: string | null) => void; tools: Tools; say: (m: string) => void; askTo: (p: Participant, what: 'mic' | 'cam') => void }) {
   const [dmTo, setDmTo] = useState<string | null>(null); const [dmText, setDmText] = useState('');
+  const [q, setQ] = useState('');
+  const hands = participants.filter((p) => p.attributes?.hand).length;
+  // Primero usted, luego las manos levantadas (en orden de llegada), luego quien habla y el resto por nombre
+  const list = participants
+    .filter((p) => !q.trim() || (p.name ?? '').toLowerCase().includes(q.trim().toLowerCase()))
+    .sort((a, b) => Number(b.identity === me) - Number(a.identity === me) || Number(!!b.attributes?.hand) - Number(!!a.attributes?.hand)
+      || Number(b.isSpeaking) - Number(a.isSpeaking) || (a.name ?? '').localeCompare(b.name ?? ''));
   return (
     <div className="flex-1 overflow-y-auto p-2 text-sm" data-testid="personas">
-      {mod && <button className="mb-2 w-full rounded-lg bg-white/10 py-2 text-xs hover:bg-white/20" onClick={() => moderate('mute_all')}>🔇 Silenciar a todos</button>}
+      <p className="mb-2 px-1 text-xs opacity-70" data-testid="cuenta-personas">👥 {participants.length} en la sala{hands ? ` · ✋ ${hands} con la mano levantada` : ''}</p>
+      {participants.length > 6 && <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="🔎 Buscar participante" className="mb-2 w-full rounded-lg bg-white/10 px-3 py-1.5 text-xs" data-testid="buscar-persona" />}
+      {mod && (
+        <div className="mb-2 grid grid-cols-2 gap-1 text-xs">
+          <button className="rounded-lg bg-white/10 py-2 hover:bg-white/20" onClick={() => moderate('mute_all')}>🔇 Silenciar a todos</button>
+          <button className="rounded-lg bg-white/10 py-2 hover:bg-white/20" onClick={() => moderate('cam_off_all')}>📷 Apagar cámaras</button>
+          {hands > 0 && <button className="col-span-2 rounded-lg bg-amber-500/30 py-2 hover:bg-amber-500/50" onClick={() => moderate('lower_all_hands')} data-testid="bajar-manos">✋ Bajar todas las manos ({hands})</button>}
+        </div>)}
       <ul className="space-y-1">
-        {participants.map((p) => {
+        {list.map((p) => {
           let role = '', extra = ''; try { const md = JSON.parse(p.metadata || '{}'); role = md.role ?? ''; extra = [md.cargo, md.inst].filter(Boolean).join(' · '); } catch { /* */ }
           const isMe = p.identity === me;
           return (
@@ -700,7 +753,13 @@ function PeoplePanel({ mod, me, participants, moderate, spot, onSpot, tools, say
                   onClick={() => onSpot(spot === p.identity ? null : p.identity)}>{spot === p.identity ? '⭐ Quitar destacado' : '⭐ Destacar para todos'}</button>)}
               {mod && !isMe && (
                 <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
-                  {p.isMicrophoneEnabled && <button className="rounded bg-white/10 px-2 py-0.5 hover:bg-white/20" onClick={() => moderate('mute', p.identity)}>Silenciar</button>}
+                  {p.isMicrophoneEnabled ? <button className="rounded bg-white/10 px-2 py-0.5 hover:bg-white/20" onClick={() => moderate('mute', p.identity)}>Silenciar</button>
+                    : <button className="rounded bg-white/10 px-2 py-0.5 hover:bg-white/20" onClick={() => askTo(p, 'mic')} data-testid="pedir-microfono">🙋 Pedir que hable</button>}
+                  {p.isCameraEnabled ? <button className="rounded bg-white/10 px-2 py-0.5 hover:bg-white/20" onClick={() => moderate('cam_off', p.identity)}>Detener video</button>
+                    : <button className="rounded bg-white/10 px-2 py-0.5 hover:bg-white/20" onClick={() => askTo(p, 'cam')}>📷 Pedir cámara</button>}
+                  {!p.identity.startsWith('inv_') && (role === 'moderator'
+                    ? <button className="rounded bg-white/10 px-2 py-0.5 hover:bg-white/20" onClick={() => moderate('remove_cohost', p.identity)} data-testid="quitar-coanfitrion">Quitar co-anfitrión</button>
+                    : !['organizer', 'teacher'].includes(role) && <button className="rounded bg-blue-600/60 px-2 py-0.5 hover:bg-blue-600" onClick={() => moderate('make_cohost', p.identity)} data-testid="hacer-coanfitrion">👑 Hacer co-anfitrión</button>)}
                   {p.attributes?.hand && <button className="rounded bg-white/10 px-2 py-0.5 hover:bg-white/20" onClick={() => moderate('lower_hand', p.identity)}>Bajar mano</button>}
                   {(p.attributes?.share === '1' || (p.attributes?.share !== '0' && !!p.permissions?.canPublishSources?.some((x) => Number(x) === 3)))
                     ? <button className="rounded bg-white/10 px-2 py-0.5 hover:bg-white/20" onClick={() => moderate('revoke_share', p.identity)}>Quitar pantalla</button>

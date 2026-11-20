@@ -6,6 +6,8 @@ export type RoomOpts = {
   sessionId: string; title: string; recording: boolean; chatEnabled: boolean; orgId: string; sectionId: string | null;
   /** Invitado externo (sin cuenta): sin adjuntos ni grabación. */
   guest?: boolean;
+  /** Vista previa antes de entrar: con qué micrófono y cámara entra (apagados si no se indica). */
+  prejoin?: { audio: boolean; video: boolean; audioDeviceId?: string; videoDeviceId?: string };
 };
 export type ConferenceControl = {
   active: { conn: Conn; opts: RoomOpts } | null;
