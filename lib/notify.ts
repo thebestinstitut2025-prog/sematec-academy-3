@@ -18,6 +18,17 @@ export async function brandOf(org?: string | null) {
   return 'SEMATEC ACADEMY';
 }
 
+const senders = new Map<string, { name: string | null; email: string | null }>();
+async function senderOf(id: string) {
+  if (senders.has(id)) return senders.get(id)!;
+  if (senders.size > 500) senders.clear();
+  try {
+    const { data } = await createAdminClient().from('profiles').select('full_name, email').eq('id', id).maybeSingle();
+    const v = { name: (data?.full_name as string | null) ?? null, email: (data?.email as string | null) ?? null };
+    senders.set(id, v); return v;
+  } catch { return null; }
+}
+
 export type Mail = { to: string; subject: string; title: string; text: string; link?: { path: string; label: string }; org?: string | null; kind?: string; by?: string | null };
 
 /** Envía un aviso por correo (nunca lanza error): devuelve si llegó al servidor de correo. */
@@ -26,8 +37,11 @@ export async function sendNotice(m: Mail): Promise<{ ok: boolean; error?: string
   try {
     const brand = await brandOf(m.org);
     const href = m.link ? `${env.siteUrl()}${m.link.path}` : undefined;
-    await sendMail(m.to, `${brand}: ${m.subject}`, mailLayout(brand, m.title, textToMailHtml(m.text), href ? { href, label: m.link!.label } : undefined),
-      `${m.title}\n\n${m.text}${href ? `\n\n${m.link!.label}: ${href}` : ''}`, undefined, { org: m.org, kind: m.kind, by: m.by });
+    // Escrito por una persona de la plataforma: sale «Nombre vía Institución» y las respuestas le llegan a su correo
+    const who = m.by ? await senderOf(m.by) : null;
+    await sendMail(m.to, `${brand}: ${m.subject}`, mailLayout(brand, m.title, textToMailHtml(m.text) + (who?.email ? `<p style="font-size:13px;color:#475569">Puede responder este correo: la respuesta le llega a ${esc(who.name ?? who.email)} (${esc(who.email)}).</p>` : ''), href ? { href, label: m.link!.label } : undefined),
+      `${m.title}\n\n${m.text}${href ? `\n\n${m.link!.label}: ${href}` : ''}${who?.email ? `\n\nPuede responder este correo: le llega a ${who.email}.` : ''}`, undefined,
+      { org: m.org, kind: m.kind, by: m.by, fromName: who?.name ?? null, replyTo: who?.email ?? null });
     return { ok: true };
   } catch (e) { return { ok: false, error: (e as Error).message }; }
 }

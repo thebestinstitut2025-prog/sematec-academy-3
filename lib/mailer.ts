@@ -17,7 +17,18 @@ export function mailConfig() {
 }
 export const mailEnabled = () => { const c = mailConfig(); return !!c.host && !!c.from; };
 
-export type MailMeta = { org?: string | null; kind?: string; by?: string | null };
+export type MailMeta = { org?: string | null; kind?: string; by?: string | null;
+  /** Quien escribe (persona de la plataforma): aparece como remitente «Nombre vía Institución» y las respuestas le llegan a su correo. */
+  fromName?: string | null; replyTo?: string | null };
+
+/** Remitente: siempre la cuenta de correo de la plataforma (la única autorizada a enviar), con el nombre de quien escribe. */
+function fromFor(c: ReturnType<typeof mailConfig>, meta?: MailMeta) {
+  if (!meta?.fromName) return c.from;
+  const addr = c.from.match(/<([^>]+)>/)?.[1] ?? c.from;
+  const brand = c.from.match(/^\s*"?([^"<]+?)"?\s*</)?.[1]?.trim() || 'SEMATEC ACADEMY';
+  const name = `${meta.fromName} vía ${brand}`.replace(/["<>\r\n]/g, '').slice(0, 120);
+  return `"${name}" <${addr}>`;
+}
 
 // Correos con enlaces de acceso: nunca se guarda su contenido (el enlace da entrada a la cuenta)
 const SECRET_KINDS = new Set(['recuperar', 'cuenta', 'acceso', 'invitacion', 'mfa']);
@@ -49,7 +60,8 @@ export async function sendMail(to: string, subject: string, html: string, text: 
     connectionTimeout: 10000, greetingTimeout: 10000, socketTimeout: 20000,
   });
   try {
-    await t.sendMail({ from: c.from, to, subject, html, text, attachments: attachments?.map((a) => ({ ...a, content: Buffer.from(a.content) })) });
+    const replyTo = meta?.replyTo && /^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(meta.replyTo) ? meta.replyTo : undefined;
+    await t.sendMail({ from: fromFor(c, meta), replyTo, to, subject, html, text, attachments: attachments?.map((a) => ({ ...a, content: Buffer.from(a.content) })) });
   } catch (e) {
     const msg = mailErrorText(e);
     await logMail(to, subject, 'failed', msg, meta, body);
