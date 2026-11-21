@@ -11,7 +11,9 @@ import { listAttachments } from '@/lib/attachments';
 import { attachExternalEval } from '../../adjuntos-actions';
 import { ActionForm, Field, Grid, SelectField, TextArea } from '@/components/forms';
 import { fmtDateTime } from '@/lib/format';
-import { ACCEPT } from '@/lib/lms';
+import { ACCEPT, isoToLocal } from '@/lib/lms';
+import { EditBox } from '@/components/edit-box';
+import { updateUnit, updateContent, updateAssignment, deleteAssignment, updateQuiz, deleteQuiz, updateExternalEval, updateAssessment, deleteAssessment, deleteThread } from '../editar-actions';
 import { createAssessment, saveGrades, togglePublish } from '../../secciones/actions';
 import { Stat } from '@/components/ui';
 import { fmtNum } from '@/lib/format';
@@ -78,6 +80,12 @@ export default async function Page({ params, searchParams }: { params: Promise<{
             <Card key={u.id ?? 'otros'} title={u.title} className="mb-4"
               actions={manager && u.id ? <ActionForm action={deleteContent} inline submitLabel="Eliminar unidad" submitClass="btn-secondary btn-sm" confirm="¿Eliminar la unidad y sus contenidos?">{hidden}<input type="hidden" name="what" value="unit" /><input type="hidden" name="id" value={u.id} /></ActionForm> : null}>
               {u.description && <p className="mb-3 text-sm text-slate-600">{u.description}</p>}
+              {manager && u.id && <EditBox label="✏ Editar unidad" testid="editar-unidad" className="mb-3">
+                <ActionForm action={updateUnit} submitLabel="Guardar cambios" resetOnSuccess={false}>{hidden}<input type="hidden" name="id" value={u.id} />
+                  <Field label="Título" name="title" required defaultValue={u.title} /><TextArea label="Descripción" name="description" defaultValue={u.description ?? ''} />
+                  <Field label="Orden" name="position" type="number" defaultValue={String(u.position ?? 0)} />
+                  <label className="flex items-center gap-2"><input type="checkbox" name="published" defaultChecked={u.published} /> Visible para los estudiantes</label>
+                </ActionForm></EditBox>}
               {ctx.isOwner && u.id && <div className="mb-3"><OwnerActions table="course_units" id={u.id} active={u.published} path={`/app/aula/${id}`} name={`la unidad «${u.title}»`} /></div>}
               {items.length ? <ul className="space-y-3">{items.map((c: any) => (
                 <li key={c.id} className="rounded-lg border border-slate-200 p-3">
@@ -87,6 +95,17 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                   </div>
                   {c.file_id && meta.get(c.file_id) && <div className="mt-2"><DownloadMenu href={`/app/aula/archivo/${c.file_id}`} name={meta.get(c.file_id).filename} mime={meta.get(c.file_id).mime_type} /></div>}
                   {c.body && <p className="mt-1 whitespace-pre-line text-sm text-slate-600">{c.body}</p>}
+                  {manager && !c.published && <Badge>Oculto</Badge>}
+                  {manager && <EditBox testid="editar-contenido">
+                    <ActionForm action={updateContent} submitLabel="Guardar cambios" resetOnSuccess={false}>{hidden}<input type="hidden" name="id" value={c.id} />
+                      <Grid><Field label="Título" name="title" required defaultValue={c.title} />
+                        <SelectField label="Unidad" name="unit_id" placeholder="Sin unidad" defaultValue={c.unit_id ?? ''} options={(units ?? []).map((x: any) => ({ value: x.id, label: x.title }))} /></Grid>
+                      {(c.kind === 'video' || c.kind === 'enlace') && <Field label="Enlace (https://)" name="url" required defaultValue={c.url ?? ''} />}
+                      <TextArea label="Texto o descripción" name="body" rows={3} defaultValue={c.body ?? ''} />
+                      <Grid><Field label="Orden" name="position" type="number" defaultValue={String(c.position ?? 0)} />
+                        <label className="mt-6 flex items-center gap-2"><input type="checkbox" name="published" defaultChecked={c.published} /> Visible para los estudiantes</label></Grid>
+                      {c.kind === 'archivo' && <p className="text-xs text-slate-500">Para cambiar el archivo, elimine este contenido (✕) y súbalo de nuevo.</p>}
+                    </ActionForm></EditBox>}
                   {ctx.isOwner && <div className="mt-2"><OwnerActions table="course_contents" id={c.id} active={c.published} path={`/app/aula/${id}`} name={`«${c.title}»`} /></div>}
                 </li>))}</ul> : <p className="text-sm text-slate-500">Sin contenidos aún.</p>}
             </Card>);
@@ -119,6 +138,19 @@ export default async function Page({ params, searchParams }: { params: Promise<{
               <p className="mt-2 text-xs text-slate-500">Puntaje máximo {a.max_score}{a.assessment_id && ' · cuenta para la nota oficial'}</p>
               {ctx.isOwner && <div className="mt-2"><OwnerActions table="assignments" id={a.id} active={a.published} path={`/app/aula/${id}?t=tareas`} name={`la tarea «${a.title}»`} /></div>}
               {manager && <p className="mt-3"><Link className="btn-secondary btn-sm" href={`${base}/tarea/${a.id}`}>Ver entregas ({n.length}, {n.filter((x: any) => x.score == null).length} por calificar)</Link></p>}
+              {manager && !a.published && <p className="mt-2"><Badge>Oculta para los estudiantes</Badge></p>}
+              {manager && <EditBox label="✏ Editar o eliminar tarea" testid="editar-tarea">
+                <ActionForm action={updateAssignment} submitLabel="Guardar cambios" resetOnSuccess={false}>{hidden}<input type="hidden" name="id" value={a.id} />
+                  <Field label="Título" name="title" required defaultValue={a.title} /><TextArea label="Instrucciones" name="instructions" rows={4} defaultValue={a.instructions ?? ''} />
+                  <Grid cols={3}><Field label="Fecha y hora de entrega" name="due_at" type="datetime-local" required defaultValue={isoToLocal(a.due_at)} />
+                    <Field label="Puntaje máximo" name="max_score" type="number" step="0.5" defaultValue={String(a.max_score)} />
+                    <SelectField label="Nota oficial (evaluación del libro)" name="assessment_id" placeholder="No pasa al libro" defaultValue={a.assessment_id ?? ''} options={assessOpts} /></Grid>
+                  <label className="flex items-center gap-2"><input type="checkbox" name="allow_late" defaultChecked={a.allow_late} /> Aceptar entregas atrasadas</label>
+                  <label className="flex items-center gap-2"><input type="checkbox" name="published" defaultChecked={a.published} /> Visible para los estudiantes</label>
+                </ActionForm>
+                <ActionForm action={deleteAssignment} inline submitLabel="🗑 Eliminar tarea" submitClass="btn-secondary btn-sm text-red-700"
+                  confirm={`¿Eliminar la tarea «${a.title}»?${n.length ? ` Se borrarán también sus ${n.length} entrega(s).` : ''} No se puede deshacer.`}>{hidden}<input type="hidden" name="id" value={a.id} /></ActionForm>
+              </EditBox>}
               {student && (sub?.score != null ? (
                 <div className="mt-3 rounded-lg bg-emerald-50 p-3 text-sm"><b>Calificada: {sub.score} / {a.max_score}</b>{sub.feedback && <p className="mt-1">Comentario: {sub.feedback}</p>}<AttachmentList items={myFiles[sub.id]} /></div>
               ) : (
@@ -147,6 +179,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     const nameOfUser = (u: string) => { const x = (upl ?? []).find((y: any) => y.user_id === u); return x ? `${x.last_names}, ${x.first_names}` : undefined; };
     const PROV: Record<string, string> = { google_forms: '📝 Google Forms', google_drive: '📂 Google Drive', microsoft_forms: '📋 Microsoft Forms', onedrive: '☁ OneDrive', otro: '🔗 Enlace' };
     const { data: att } = student ? await ctx.supabase.from('quiz_attempts').select('quiz_id, submitted_at, score, max_score, grade').eq('student_id', ctx.studentId!) : { data: [] as any[] };
+    const { data: allAtt } = manager && quizzes?.length ? await ctx.supabase.from('quiz_attempts').select('quiz_id').in('quiz_id', quizzes.map((q: any) => q.id)) : { data: [] as any[] };
+    const attemptsOf = (qid: string) => (allAtt ?? []).filter((t: any) => t.quiz_id === qid).length;
     const now = new Date().toISOString();
     body = (
       <>
@@ -183,7 +217,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                   {(manager || open) && <a className={manager ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'} href={`/app/aula/evaluacion/${x.id}`} target="_blank" rel="noopener noreferrer" data-testid="entrar-evaluacion">{manager ? '👁 Abrir enlace' : '▶ Entrar a la evaluación'}</a>}
                   {student && !open && x.opens_at > now && <span className="text-sm text-slate-500">Abre el {fmtDateTime(x.opens_at)}</span>}
                   {student && mine && <span className="text-xs text-emerald-700">✓ Usted entró el {fmtDateTime(mine.first_opened)}</span>}
-                  {manager && <ActionForm action={deleteExternalEval} inline submitLabel="🗑" submitClass="text-xs text-red-600 hover:underline" confirm={`¿Eliminar «${x.title}»?`}>{hidden}<input type="hidden" name="id" value={x.id} /></ActionForm>}
+                  {manager && <ActionForm action={deleteExternalEval} inline submitLabel="🗑 Eliminar" submitClass="text-xs text-red-600 hover:underline" confirm={`¿Eliminar «${x.title}»?`}>{hidden}<input type="hidden" name="id" value={x.id} /></ActionForm>}
                 </div>
                 {student && <AttachmentList items={evalFiles[x.id]} canRemove={open} path={base} />}
                 {student && open && (<div data-testid="entregar-evaluacion">
@@ -193,6 +227,16 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                   </ActionForm></div>)}
                 {manager && (evalFiles[x.id]?.length ?? 0) > 0 && <details className="mt-2 text-sm" open><summary className="cursor-pointer text-slate-500" data-testid="archivos-recibidos">📎 {evalFiles[x.id].length} archivo(s) recibido(s)</summary>
                   <AttachmentList items={evalFiles[x.id]} who={nameOfUser} /></details>}
+                {manager && <EditBox label="✏ Editar evaluación" testid="editar-evaluacion-externa">
+                  <ActionForm action={updateExternalEval} submitLabel="Guardar cambios" resetOnSuccess={false}>{hidden}<input type="hidden" name="id" value={x.id} />
+                    <Field label="Título" name="title" required defaultValue={x.title} />
+                    <Field label="Nuevo enlace (déjelo vacío para mantener el actual; use «👁 Abrir enlace» para verlo)" name="url" placeholder="https://forms.gle/…" />
+                    <TextArea label="Instrucciones" name="instructions" defaultValue={x.instructions ?? ''} />
+                    <Grid cols={3}><Field label="Abre" name="opens_at" type="datetime-local" required defaultValue={isoToLocal(x.opens_at)} />
+                      <Field label="Cierra" name="closes_at" type="datetime-local" required defaultValue={isoToLocal(x.closes_at)} />
+                      <SelectField label="Nota oficial (evaluación del libro)" name="assessment_id" placeholder="No pasa al libro" defaultValue={x.assessment_id ?? ''} options={assessOpts} /></Grid>
+                    <label className="flex items-center gap-2"><input type="checkbox" name="published" defaultChecked={x.published} /> Visible para los estudiantes</label>
+                  </ActionForm></EditBox>}
                 {manager && <details className="mt-2 text-sm"><summary className="cursor-pointer text-slate-500" data-testid="ingresos">👥 {who.length} estudiante(s) entraron</summary>
                   <ul className="mt-1 space-y-0.5 text-xs">{who.map((a: any) => <li key={a.student_id}>{a.students ? `${a.students.last_names}, ${a.students.first_names}` : a.student_id} · {fmtDateTime(a.first_opened)}{a.times > 1 ? ` (${a.times} veces)` : ''}</li>)}</ul></details>}
               </div>
@@ -209,6 +253,20 @@ export default async function Page({ params, searchParams }: { params: Promise<{
               {ctx.isOwner && <div className="mt-2"><OwnerActions table="quizzes" id={q.id} active={q.published} path={`/app/aula/${id}?t=examenes`} name={`la prueba «${q.title}»`} /></div>}
               {q.instructions && <p className="mt-2 whitespace-pre-line text-sm">{q.instructions}</p>}
               {manager && <p className="mt-3"><Link className="btn-secondary btn-sm" href={`${base}/examen/${q.id}`}>Preguntas y resultados</Link></p>}
+              {manager && <EditBox label="✏ Editar o eliminar examen" testid="editar-examen">
+                <ActionForm action={updateQuiz} submitLabel="Guardar cambios" resetOnSuccess={false}>{hidden}<input type="hidden" name="id" value={q.id} />
+                  <Field label="Título" name="title" required defaultValue={q.title} /><TextArea label="Instrucciones" name="instructions" defaultValue={q.instructions ?? ''} />
+                  <Grid cols={3}><Field label="Abre" name="opens_at" type="datetime-local" required defaultValue={isoToLocal(q.opens_at)} />
+                    <Field label="Cierra" name="closes_at" type="datetime-local" required defaultValue={isoToLocal(q.closes_at)} />
+                    <Field label="Tiempo límite (minutos, opcional)" name="time_limit_min" type="number" defaultValue={q.time_limit_min != null ? String(q.time_limit_min) : ''} /></Grid>
+                  <Grid><Field label="Intentos permitidos" name="max_attempts" type="number" defaultValue={String(q.max_attempts)} />
+                    <SelectField label="Nota oficial (evaluación del libro)" name="assessment_id" placeholder="No pasa al libro" defaultValue={q.assessment_id ?? ''} options={assessOpts} /></Grid>
+                  <label className="flex items-center gap-2"><input type="checkbox" name="show_results" defaultChecked={q.show_results} /> Mostrar puntaje al alumno</label>
+                  <p className="text-xs text-slate-500">Las preguntas se editan en «Preguntas y resultados».</p>
+                </ActionForm>
+                <ActionForm action={deleteQuiz} inline submitLabel="🗑 Eliminar examen" submitClass="btn-secondary btn-sm text-red-700"
+                  confirm={`¿Eliminar el examen «${q.title}» y todas sus preguntas?${attemptsOf(q.id) ? ` También se borrarán ${attemptsOf(q.id)} intento(s) de estudiantes.` : ''} No se puede deshacer.`}>{hidden}<input type="hidden" name="id" value={q.id} /></ActionForm>
+              </EditBox>}
               {student && (
                 <div className="mt-3 text-sm">
                   {done.map((t: any, i: number) => <p key={i}>Intento {i + 1}: {q.show_results ? <b>{t.score} / {t.max_score}{t.grade != null && ` · nota ${t.grade}`}</b> : 'enviado'}</p>)}
@@ -283,11 +341,26 @@ export default async function Page({ params, searchParams }: { params: Promise<{
             </Card>}
             <Card title="Evaluaciones">
               {items.length ? <ul className="divide-y divide-slate-100">{items.map((a: any) => (
-                <li key={a.id} className="flex items-center justify-between gap-2 py-2 text-sm">
-                  <span><b>{a.name}</b> · {fmtNum(a.weight_pct, 0)} %{a.due_on ? ` · ${a.due_on}` : ''}</span>
-                  <ActionForm action={togglePublish} inline submitLabel={a.published ? 'Ocultar' : 'Publicar'} submitClass="btn-secondary btn-sm">
-                    <input type="hidden" name="id" value={a.id} /><input type="hidden" name="section_id" value={id} /><input type="hidden" name="published" value={String(!a.published)} />
-                  </ActionForm></li>))}</ul> : <Empty>Sin evaluaciones.</Empty>}
+                <li key={a.id} className="py-2 text-sm" data-testid="evaluacion-libro">
+                  <div className="flex items-center justify-between gap-2">
+                    <span><b>{a.name}</b> · {fmtNum(a.weight_pct, 0)} %{a.due_on ? ` · ${a.due_on}` : ''}</span>
+                    <ActionForm action={togglePublish} inline submitLabel={a.published ? 'Ocultar' : 'Publicar'} submitClass="btn-secondary btn-sm">
+                      <input type="hidden" name="id" value={a.id} /><input type="hidden" name="section_id" value={id} /><input type="hidden" name="published" value={String(!a.published)} />
+                    </ActionForm></div>
+                  {!closed && <EditBox label="✏ Editar o eliminar" testid="editar-evaluacion" className="mt-2">
+                    <ActionForm action={updateAssessment} submitLabel="Guardar cambios" resetOnSuccess={false}>
+                      <input type="hidden" name="id" value={a.id} /><input type="hidden" name="section_id" value={id} />
+                      <Field label="Nombre" name="name" required defaultValue={a.name} />
+                      <Grid><Field label="Ponderación %" name="weight_pct" type="number" step="0.5" min={0.5} max={100} required defaultValue={String(a.weight_pct)} />
+                        <Field label="Fecha" name="due_on" type="date" defaultValue={a.due_on ?? ''} /></Grid>
+                      <label className="flex items-center gap-2"><input type="checkbox" name="published" defaultChecked={a.published} /> Visible para los estudiantes</label>
+                    </ActionForm>
+                    {(() => { const ng = (grades ?? []).filter((x: any) => x.assessment_id === a.id).length; return ng
+                      ? <p className="text-xs text-slate-500">🔒 Tiene {ng} nota(s) registrada(s): no se puede eliminar (las notas son registro oficial). Puede ocultarla o cambiarle el nombre y la ponderación.</p>
+                      : <ActionForm action={deleteAssessment} inline submitLabel="🗑 Eliminar evaluación" submitClass="btn-secondary btn-sm text-red-700" confirm={`¿Eliminar la evaluación «${a.name}»? Las tareas y exámenes vinculados dejarán de pasar nota a ella.`}>
+                          <input type="hidden" name="id" value={a.id} /><input type="hidden" name="section_id" value={id} /></ActionForm>; })()}
+                  </EditBox>}
+                </li>))}</ul> : <Empty>Sin evaluaciones.</Empty>}
               <div className="mt-4 flex flex-wrap gap-2">
                 <Link className="btn-secondary btn-sm" href={`${base}?t=tareas`}>📝 Tareas</Link>
                 <Link className="btn-secondary btn-sm" href={`${base}?t=examenes`}>✅ Exámenes</Link>
@@ -340,7 +413,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           <li key={t.id}><Link href={`${base}/foro/${t.id}`} className="block py-3 hover:bg-slate-50">
             <p className="font-semibold">{t.pinned && '📌 '}{t.locked && '🔒 '}{t.title}</p>
             <p className="text-xs text-slate-500">{t.author_name} · {t.forum_posts?.[0]?.count ?? 0} respuestas · último mensaje {fmtDateTime(t.last_post_at)}</p>
-          </Link>{ctx.isOwner && <div className="pb-3"><OwnerActions table="forum_threads" id={t.id} path={`/app/aula/${id}?t=foro`} name={`el tema «${t.title}»`} /></div>}</li>))}</ul> : <Empty>Aún no hay temas en el foro.</Empty>}</Card>
+          </Link>{manager && <div className="pb-2"><ActionForm action={deleteThread} inline submitLabel="🗑 Eliminar tema" submitClass="text-xs text-red-600 hover:underline" confirm={`¿Eliminar el tema «${t.title}» y todas sus respuestas?`}>{hidden}<input type="hidden" name="thread_id" value={t.id} /></ActionForm></div>}{ctx.isOwner && <div className="pb-3"><OwnerActions table="forum_threads" id={t.id} path={`/app/aula/${id}?t=foro`} name={`el tema «${t.title}»`} /></div>}</li>))}</ul> : <Empty>Aún no hay temas en el foro.</Empty>}</Card>
       </>);
   }
 

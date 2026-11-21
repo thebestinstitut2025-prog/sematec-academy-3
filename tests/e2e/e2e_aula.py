@@ -33,7 +33,8 @@ with sync_playwright() as pw:
     t.fill('input[name=time_limit_min]', '20'); t.click('button:has-text("Crear examen")'); check('creado' in status_msg(t), 'Profesor crea un examen')
     go(t, URL + '?t=examenes'); t.click('a:has-text("Preguntas y resultados")'); t.wait_for_url(re.compile(r'/examen/'))
     for prompt, kind, opts in [('¿Cuánto es 2+2?', 'unica', '3\n*4\n5'), ('Marque lenguajes de BD', 'multiple', '*SQL\nHTML\n*PL/SQL'), ('SQL significa Structured Query Language', 'vf', '*Verdadero')]:
-        t.fill('textarea[name=prompt]', prompt); t.select_option('select[name=kind]', kind); t.fill('textarea[name=options]', opts); t.click('button:has-text("Agregar")')
+        add = t.locator('.card:has-text("Agregar pregunta")').last
+        add.locator('textarea[name=prompt]').fill(prompt); add.locator('select[name=kind]').select_option(kind); add.locator('textarea[name=options]').fill(opts); add.locator('button:has-text("Agregar")').click()
         status_msg(t); t.wait_for_selector(f'text={prompt}')
     check(t.locator('text=✔').count() == 4, 'Examen con 3 preguntas y respuestas correctas marcadas')
     t.click('button:has-text("Publicar examen")'); status_msg(t)
@@ -49,7 +50,8 @@ with sync_playwright() as pw:
     other = b.new_context(); o = login(other, 'estudiante2.a@demo.sematec.test')
     fid = sql("select id from lms_files limit 1"); r = o.request.get(f'{BASE}/app/aula/archivo/{fid}')
     check(r.status == 404, 'Alumno de otra sección no puede descargar el archivo'); other.close()
-    go(e, URL + '?t=tareas'); e.fill('textarea[name=body]', 'Mi desarrollo de la tarea'); e.set_input_files('input[name=file]', pdf); e.click('button:has-text("Entregar")')
+    go(e, URL + '?t=tareas'); e.fill('textarea[name=body]', 'Mi desarrollo de la tarea'); e.locator('[data-testid=adjuntar-input]').set_input_files(pdf)
+    e.wait_for_function("() => (document.querySelector('[data-testid=adjuntos-lista]')?.innerText || '').includes('✓')", timeout=30000); e.click('button:has-text("Entregar")')
     check('recibida' in status_msg(e), 'Estudiante entrega la tarea con archivo')
     go(e, URL + '?t=examenes'); e.click('a:has-text("Rendir examen")'); e.click('button:has-text("Comenzar examen")')
     e.wait_for_selector('text=Tiempo restante'); shot(e, 'aula_examen_celular')

@@ -46,6 +46,16 @@ export function localToIso(v: string, tz = 'America/Santiago'): string {
   return new Date(d.getTime() + (inUtc.getTime() - inTz.getTime())).toISOString();
 }
 
+/** ISO UTC → «2026-11-10T18:00» en la hora de Chile (para rellenar campos datetime-local al editar). */
+export function isoToLocal(iso: string | null | undefined, tz = 'America/Santiago'): string {
+  if (!iso) return '';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '';
+  const p = Object.fromEntries(new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+    .formatToParts(d).map((x) => [x.type, x.value]));
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`;
+}
+
 /** Libro virtual de la biblioteca (PDF, Word, PowerPoint…): mismas verificaciones, visible a toda la institución. */
 export async function saveLibraryFile(ctx: Ctx, file: File | null): Promise<string | null> {
   if (!file || file.size === 0) return null;

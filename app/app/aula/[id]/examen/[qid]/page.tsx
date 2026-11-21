@@ -8,6 +8,8 @@ import { fmtDateTime } from '@/lib/format';
 import { AttachmentList } from '@/components/attachment-list';
 import { listAttachments } from '@/lib/attachments';
 import { addQuestion, deleteQuestion, publishQuiz } from '../../../actions';
+import { updateQuestion } from '../../../editar-actions';
+import { EditBox } from '@/components/edit-box';
 
 export default async function Page({ params }: { params: Promise<{ id: string; qid: string }> }) {
   const { id, qid } = await params;
@@ -34,9 +36,18 @@ export default async function Page({ params }: { params: Promise<{ id: string; q
           {(qs ?? []).map((x: any, i: number) => {
             const ok: number[] = keys?.find((k: any) => k.question_id === x.id)?.correct ?? [];
             return (
-              <Card key={x.id} title={`${i + 1}. ${x.prompt}`} actions={<ActionForm action={deleteQuestion} inline submitLabel="✕" submitClass="btn-secondary btn-sm" confirm="¿Eliminar la pregunta?">{hidden}<input type="hidden" name="id" value={x.id} /></ActionForm>}>
+              <Card key={x.id} title={`${i + 1}. ${x.prompt}`} actions={<ActionForm action={deleteQuestion} inline submitLabel="🗑" submitClass="btn-secondary btn-sm" confirm="¿Eliminar la pregunta?">{hidden}<input type="hidden" name="id" value={x.id} /></ActionForm>}>
                 <ul className="text-sm">{(x.options as string[]).map((o, j) => <li key={j} className={ok.includes(j) ? 'font-bold text-emerald-700' : ''}>{ok.includes(j) ? '✔' : '○'} {o}</li>)}</ul>
                 <p className="mt-1 text-xs text-slate-500">{x.points} pt · {x.kind === 'multiple' ? 'selección múltiple' : x.kind === 'vf' ? 'verdadero/falso' : 'selección única'}</p>
+                <EditBox label="✏ Editar pregunta" testid="editar-pregunta">
+                  <ActionForm action={updateQuestion} submitLabel="Guardar cambios" resetOnSuccess={false}>{hidden}<input type="hidden" name="id" value={x.id} />
+                    <TextArea label="Pregunta" name="prompt" required defaultValue={x.prompt} />
+                    <Grid cols={3}><SelectField label="Tipo" name="kind" required defaultValue={x.kind} options={[{ value: 'unica', label: 'Selección única' }, { value: 'multiple', label: 'Selección múltiple' }, { value: 'vf', label: 'Verdadero / falso' }]} />
+                      <Field label="Puntos" name="points" type="number" step="0.5" defaultValue={String(x.points)} /><Field label="Orden" name="position" type="number" defaultValue={String(x.position ?? i + 1)} /></Grid>
+                    <TextArea label="Opciones: una por línea; las correctas con * al inicio" name="options" required rows={5}
+                      defaultValue={(x.options as string[]).map((o, j) => (ok.includes(j) ? '*' : '') + o).join('\n')} />
+                    {(att?.some((t: any) => t.submitted_at)) && <p className="text-xs text-amber-700">Ya hay intentos enviados: conservan el puntaje con que se corrigieron.</p>}
+                  </ActionForm></EditBox>
               </Card>);
           })}
           <Card title="Agregar pregunta">
