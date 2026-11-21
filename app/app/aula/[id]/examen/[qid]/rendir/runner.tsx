@@ -12,11 +12,11 @@ export function StartQuiz({ quizId }: { quizId: string }) {
   const router = useRouter();
   return (
     <div>
-      <button className="btn-primary" disabled={pending} onClick={() => start(async () => {
+      <button className="btn-primary px-6 py-3 text-base" data-testid="comenzar-prueba" disabled={pending} onClick={() => start(async () => {
         const fd = new FormData(); fd.set('quiz_id', quizId);
         const r = await startQuiz(fd);
         if (r.ok) router.refresh(); else setErr(r.error ?? 'Error');
-      })}>{pending ? 'Iniciando…' : 'Comenzar examen'}</button>
+      })}>{pending ? 'Entrando…' : '▶ Entrar a la prueba'}</button>
       {err && <p className="mt-3 rounded-lg bg-red-50 p-3 text-sm text-red-700">{err}</p>}
     </div>
   );

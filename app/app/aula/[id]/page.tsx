@@ -234,8 +234,11 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                 {x.instructions && <p className="mt-2 whitespace-pre-line text-sm">{x.instructions}</p>}
                 {evalMats[x.id]?.length ? <div className="mt-2" data-testid="material-evaluacion"><p className="text-xs font-semibold text-slate-500">📎 Archivos del profesor</p><AttachmentList items={evalMats[x.id]} canRemove={manager} path={base} /></div> : null}
                 <div className="mt-3 flex flex-wrap items-center gap-2">
-                  {(manager || open) && <a className={manager ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'} href={`/app/aula/evaluacion/${x.id}`} target="_blank" rel="noopener noreferrer" data-testid="entrar-evaluacion">{manager ? '👁 Abrir enlace' : '▶ Entrar a la evaluación'}</a>}
-                  {student && !open && x.opens_at > now && <span className="text-sm text-slate-500">Abre el {fmtDateTime(x.opens_at)}</span>}
+                  {manager && <a className="btn-primary" href={`/app/aula/evaluacion/${x.id}`} target="_blank" rel="noopener noreferrer" data-testid="entrar-evaluacion">👁 Entrar a la evaluación (vista del profesor)</a>}
+                  {!manager && (open
+                    ? <a className="btn-primary px-6 py-3 text-base" href={`/app/aula/evaluacion/${x.id}`} target="_blank" rel="noopener noreferrer" data-testid="entrar-evaluacion">▶ Entrar a la evaluación</a>
+                    : <span className="flex flex-wrap items-center gap-2"><button type="button" disabled className="btn-secondary cursor-not-allowed opacity-60" data-testid="entrar-evaluacion-bloqueado">🔒 Entrar a la evaluación</button>
+                        <span className="text-sm text-slate-500">{x.opens_at > now ? `Se habilita el ${fmtDateTime(x.opens_at)}` : 'La evaluación ya cerró'}</span></span>)}
                   {student && mine && <span className="text-xs text-emerald-700">✓ Usted entró el {fmtDateTime(mine.first_opened)}</span>}
                   {manager && <ActionForm action={deleteExternalEval} inline submitLabel="🗑 Eliminar" submitClass="text-xs text-red-600 hover:underline" confirm={`¿Eliminar «${x.title}»?`}>{hidden}<input type="hidden" name="id" value={x.id} /></ActionForm>}
                 </div>
@@ -274,7 +277,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
               {ctx.isOwner && <div className="mt-2"><OwnerActions table="quizzes" id={q.id} active={q.published} path={`/app/aula/${id}?t=examenes`} name={`la prueba «${q.title}»`} /></div>}
               {q.instructions && <p className="mt-2 whitespace-pre-line text-sm">{q.instructions}</p>}
               {quizMats[q.id]?.length ? <div className="mt-2" data-testid="material-examen"><p className="text-xs font-semibold text-slate-500">📎 Archivos del profesor</p><AttachmentList items={quizMats[q.id]} canRemove={manager} path={base} /></div> : null}
-              {manager && <p className="mt-3"><Link className="btn-secondary btn-sm" href={`${base}/examen/${q.id}`}>Preguntas y resultados</Link></p>}
+              {manager && <p className="mt-3 flex flex-wrap gap-2"><Link className="btn-primary" href={`${base}/examen/${q.id}/rendir`} data-testid="entrar-prueba">👁 Entrar a la prueba (vista previa)</Link>
+                <Link className="btn-secondary" href={`${base}/examen/${q.id}`}>Preguntas y resultados</Link></p>}
               {manager && <EditBox label="✏ Editar o eliminar examen" testid="editar-examen">
                 <ActionForm action={updateQuiz} submitLabel="Guardar cambios" resetOnSuccess={false}>{hidden}<input type="hidden" name="id" value={q.id} />
                   <Field label="Título" name="title" required defaultValue={q.title} /><TextArea label="Instrucciones" name="instructions" defaultValue={q.instructions ?? ''} />
@@ -293,7 +297,13 @@ export default async function Page({ params, searchParams }: { params: Promise<{
               {student && (
                 <div className="mt-3 text-sm">
                   {done.map((t: any, i: number) => <p key={i}>Intento {i + 1}: {q.show_results ? <b>{t.score} / {t.max_score}{t.grade != null && ` · nota ${t.grade}`}</b> : 'enviado'}</p>)}
-                  {open && mine.length - done.length + (q.max_attempts - mine.length) > 0 && <Link className="btn-primary btn-sm mt-2 inline-block" href={`${base}/examen/${q.id}/rendir`}>{mine.some((t: any) => !t.submitted_at) ? 'Continuar examen' : 'Rendir examen'}</Link>}
+                  {(() => {
+                    const going = mine.some((t: any) => !t.submitted_at);
+                    const left = going || mine.length < q.max_attempts;
+                    if (open && left) return <Link className="btn-primary mt-3 inline-block px-6 py-3 text-base" href={`${base}/examen/${q.id}/rendir`} data-testid="entrar-prueba">{going ? '▶ Continuar la prueba' : '▶ Entrar a la prueba'}</Link>;
+                    const why = q.opens_at > now ? `Se habilita el ${fmtDateTime(q.opens_at)}` : !open ? 'La prueba ya cerró' : 'Ya usó todos sus intentos';
+                    return <span className="mt-3 flex flex-wrap items-center gap-2"><button type="button" disabled className="btn-secondary cursor-not-allowed opacity-60" data-testid="entrar-prueba-bloqueado">🔒 Entrar a la prueba</button><span className="text-slate-500">{why}</span></span>;
+                  })()}
                 </div>)}
             </Card>);
         }) : <Card><Empty>No hay exámenes.</Empty></Card>}</div>
@@ -313,6 +323,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       ctx.supabase.from('quizzes').select('id, title, opens_at, closes_at, published').eq('section_id', id).order('opens_at'),
     ]);
     const openQuizzes = (quizzes ?? []).filter((q: any) => q.published && Date.parse(q.opens_at) <= Date.now() && Date.parse(q.closes_at) > Date.now());
+    const { data: extList } = await ctx.supabase.from('external_evaluations').select('id, title, opens_at, closes_at, published').eq('section_id', id);
+    const openExts = (extList ?? []).filter((x: any) => x.published && Date.parse(x.opens_at) <= Date.now() && Date.parse(x.closes_at) > Date.now());
     if (manager) {
       const [{ data: roster }, { data: grades }, { data: subs }] = await Promise.all([
         ctx.supabase.from('section_enrollments').select('student_id, students(id, first_names, last_names)').eq('section_id', id).neq('status', 'dropped'),
@@ -404,7 +416,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           <div className="grid gap-4 sm:grid-cols-3">
             <Stat label="Mi promedio" value={<span data-testid="mi-promedio-aula">{avg != null ? fmtNum(avg, gs.decimals) : '—'}</span>} hint={`Aprueba con ${gs.passing_grade}`} />
             <Stat label="Evaluaciones con nota" value={`${done.length} / ${rows.length}`} />
-            <Stat label="Exámenes abiertos ahora" value={openQuizzes.length} href={`${base}?t=examenes`} />
+            <Stat label="Pruebas abiertas ahora" value={openQuizzes.length + openExts.length} href={`${base}?t=examenes`} />
           </div>
           <Card title="Mis notas">
             {rows.length ? <table className="table"><thead><tr><th>Evaluación</th><th>Ponderación</th><th>Nota</th></tr></thead>
@@ -412,9 +424,10 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                 <td className={r.grade != null && Number(r.grade) < Number(gs.passing_grade) ? 'font-bold text-red-600' : 'font-bold'}>{r.grade != null ? fmtNum(r.grade, gs.decimals) : '—'}</td></tr>)}</tbody></table>
               : <Empty>El profesor aún no publica evaluaciones.</Empty>}
           </Card>
-          {(openQuizzes.length > 0 || upcoming.length > 0) && <Card title="Por rendir y entregar">
+          {(openQuizzes.length > 0 || openExts.length > 0 || upcoming.length > 0) && <Card title="Por rendir y entregar">
             <ul className="space-y-2 text-sm">
-              {openQuizzes.map((q: any) => <li key={q.id} className="flex items-center justify-between gap-2">✅ {q.title}<Link className="btn-primary btn-sm" href={`${base}/examen/${q.id}/rendir`}>Rendir</Link></li>)}
+              {openQuizzes.map((q: any) => <li key={q.id} className="flex items-center justify-between gap-2">✅ {q.title}<Link className="btn-primary btn-sm" href={`${base}/examen/${q.id}/rendir`}>▶ Entrar a la prueba</Link></li>)}
+              {openExts.map((x: any) => <li key={x.id} className="flex items-center justify-between gap-2">🔗 {x.title}<a className="btn-primary btn-sm" href={`/app/aula/evaluacion/${x.id}`} target="_blank" rel="noopener noreferrer">▶ Entrar a la evaluación</a></li>)}
               {upcoming.map((t: any) => <li key={t.id} className="flex items-center justify-between gap-2">📝 {t.title}<span className="text-xs text-slate-500">entrega {fmtDateTime(t.due_at)}</span></li>)}
             </ul></Card>}
         </div>);

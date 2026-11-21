@@ -61,7 +61,7 @@ def main():
         check(p.locator('a[href^="/app/aula/"]').count() >= 1, 'El estudiante ve sus cursos en el Aula')
         sec = sql("select se.section_id from section_enrollments se join students s on s.id=se.student_id join sections x on x.id=se.section_id join courses c on c.id=x.course_id where s.email='estudiante2.a@demo.sematec.test' and c.code='BDD101'")
         go(p, f'{BASE}/app/aula/{sec}?t=examenes')
-        check('Prueba borrador e2e' in p.content() and p.locator('text=Rendir examen').count() == 1, 'Ve la evaluación publicada y puede rendirla')
+        check('Prueba borrador e2e' in p.content() and p.locator('a:has-text("Entrar a la prueba")').count() == 1, 'Ve la evaluación publicada y puede rendirla')
         c.close()
 
         # Al iniciar sesión, la ficha con su correo se vincula sola

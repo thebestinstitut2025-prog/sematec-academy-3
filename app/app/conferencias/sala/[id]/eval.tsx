@@ -29,7 +29,7 @@ export function EvalBanner({ launched, onClose }: { launched: Launched | null; o
       <p className="mt-1 text-base font-semibold">{launched.title}</p>
       <p className="mt-1 opacity-80">Se abre en otra pestaña: la clase sigue aquí.</p>
       <div className="mt-3 flex gap-2">
-        <a href={linkOf(launched)} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-blue-600 px-4 py-2 font-semibold hover:bg-blue-500" onClick={onClose} data-testid="rendir-ahora">▶ Rendir ahora</a>
+        <a href={linkOf(launched)} target="_blank" rel="noopener noreferrer" className="rounded-lg bg-blue-600 px-4 py-2 font-semibold hover:bg-blue-500" onClick={onClose} data-testid="rendir-ahora">▶ Entrar a la prueba</a>
         <button className="rounded-lg bg-white/10 px-3 py-2 hover:bg-white/20" onClick={onClose}>Más tarde</button>
       </div>
     </div>
@@ -73,7 +73,7 @@ export function EvalPanel({ sessionId, participants, onLaunch, say }: { sessionI
           <p className="mb-2 text-xs font-bold uppercase opacity-60">Para rendir ahora</p>
           {items.filter((i) => i.open).length ? items.filter((i) => i.open).map((i) => (
             <a key={i.id} className="mb-2 flex items-center justify-between rounded-lg bg-blue-600/30 px-3 py-2 hover:bg-blue-600/50" target="_blank" rel="noopener noreferrer"
-              href={linkOf({ ...i, section: d.sectionId! })}>{i.kind === 'quiz' ? '✅' : '🔗'} {i.title}<span className="text-xs">Rendir ▶</span></a>))
+              href={linkOf({ ...i, section: d.sectionId! })}>{i.kind === 'quiz' ? '✅' : '🔗'} {i.title}<span className="text-xs">Entrar ▶</span></a>))
             : <p className="opacity-70">No hay evaluaciones abiertas en este momento.</p>}
         </section>
         <section>
@@ -118,7 +118,7 @@ export function EvalPanel({ sessionId, participants, onLaunch, say }: { sessionI
       </div>
       {tab === 'lanzar' ? (
         <div className="flex-1 space-y-2 overflow-y-auto p-3">
-          <p className="text-xs opacity-75">Envíe un examen o evaluación a toda la clase: a cada estudiante le aparece un aviso con el botón «Rendir ahora».</p>
+          <p className="text-xs opacity-75">Envíe un examen o evaluación a toda la clase: a cada estudiante le aparece un aviso con el botón «Entrar a la prueba».</p>
           {items.length ? items.map((i) => (
             <div key={i.kind + i.id} className="flex items-center justify-between gap-2 rounded-lg bg-white/5 px-3 py-2">
               <span className="min-w-0"><span className="block truncate font-semibold">{i.kind === 'quiz' ? '✅' : '🔗'} {i.title}</span>
