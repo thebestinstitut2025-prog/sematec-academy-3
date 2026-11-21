@@ -19,7 +19,7 @@ export const MAP_DESC: Record<string, string> = {
   '/app/calificaciones': 'Notas, promedios y actas', '/app/asistencia': 'Asistencia de clases y del personal', '/app/certificados': 'Diplomas y certificados verificables',
   '/app/admision': 'Postulaciones recibidas desde el sitio web', '/app/aula': 'Contenidos, tareas, evaluaciones y foros', '/app/conferencias': 'Clases en vivo tipo Zoom con grabación',
   '/app/biblioteca': 'Libros, recursos digitales y préstamos', '/app/reservas': 'Salas, laboratorios y equipos', '/app/anuncios': 'Avisos para toda la comunidad o un curso',
-  '/app/mensajes': 'Mensajes entre personas (también por correo)', '/app/calendario': 'Eventos, feriados y fechas importantes', '/app/encuestas': 'Encuestas y evaluación docente',
+  '/app/mensajes': 'Mensajes entre personas (también por correo)', '/app/correo': 'Escribir correos a cualquier dirección, con archivos', '/app/calendario': 'Eventos, feriados y fechas importantes', '/app/encuestas': 'Encuestas y evaluación docente',
   '/app/punto-estudiantil': 'Trámites y solicitudes estudiantiles', '/app/oficinas': 'Oficinas, citas y mesas de ayuda', '/app/egresados': 'Red de egresados',
   '/app/empleos': 'Bolsa de empleo y prácticas', '/app/soporte': 'Ayuda técnica con seguimiento', '/app/oficina': 'Word, Excel, PowerPoint y Publisher en línea', '/app/sistemas': 'Centro de sistemas: becas, mantención, contratos y 80 más',
   '/app/archivos': 'Mis archivos en la nube, carpetas y compartir', '/app/traducir': 'Traductor de textos y documentos', '/app/finanzas': 'Cargos, pagos, caja, gastos y balance',

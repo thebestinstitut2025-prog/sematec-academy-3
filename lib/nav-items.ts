@@ -32,7 +32,8 @@ export function baseNav(ctx: Ctx): NavItem[] {
   if (can(ctx, 'conferences.view') || ctx.teacherId || ctx.studentId) items.push({ href: '/app/conferencias', label: 'Aulas virtuales', icon: '🎥' });
   if (ctx.orgId) items.push(
     { href: '/app/anuncios', label: 'Anuncios', icon: '📢' },
-    { href: '/app/mensajes', label: 'Mensajes', icon: '✉' },
+    { href: '/app/mensajes', label: 'Mensajes', icon: '💬' },
+    { href: '/app/correo', label: 'Correo', icon: '✉' },
     { href: '/app/oficina', label: 'Oficina (Word, Excel…)', icon: '💼' },
     { href: '/app/biblioteca', label: 'Biblioteca', icon: '📖' },
     { href: '/app/soporte', label: 'Soporte técnico', icon: '🛟' },
