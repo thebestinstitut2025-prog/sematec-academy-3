@@ -24,6 +24,13 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const active = s.status === 'scheduled' || s.status === 'live';
   const { data: recs } = await sb.from('conference_recordings').select('id, filename, size_bytes, duration_sec, created_at, group_id, part_no').eq('session_id', id).order('created_at', { ascending: false });
   const { data: canManage } = await sb.rpc('can_manage_recordings', { p_session: id });
+  // Las partes de una misma grabación se muestran juntas como «Clase completa»
+  const recGroups: any[][] = [];
+  for (const r of recs ?? []) {
+    const g = r.group_id ? recGroups.find((x) => x[0].group_id === r.group_id) : null;
+    if (g) g.push(r); else recGroups.push([r]);
+  }
+  recGroups.forEach((g) => g.sort((a, b) => (a.part_no ?? 0) - (b.part_no ?? 0)));
   const [{ data: guests }, invites] = await Promise.all([
     sb.from('conference_guests').select('id, full_name, document_type, document_number, position, institution, email, phone, created_at, joined_at, left_at, removed').eq('session_id', id).order('created_at'),
     moderator ? listInvites(id) : Promise.resolve([]),
@@ -80,21 +87,30 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
               : <Empty>Ningún invitado externo ha entrado todavía.</Empty>}
           </Card>)}
         <div className="space-y-6">
-          <Card title={`🎬 Grabaciones (${recs?.length ?? 0})`}>
-            {recs?.length ? <ul className="space-y-3">{recs.map((r: any) => (
+          <Card title={`🎬 Grabaciones (${recGroups.length})`}>
+            {recGroups.length ? <ul className="space-y-3">{recGroups.map((g) => {
+              const r = g[0]; const many = g.length > 1;
+              const secs = g.reduce((x: number, p: any) => x + (Number(p.duration_sec) || 0), 0);
+              const mb = g.reduce((x: number, p: any) => x + Number(p.size_bytes || 0), 0) / 1048576;
+              const recButtons = (x: any) => canManage && <>
+                <DownloadMenu href={`/app/conferencias/grabacion/${x.id}?descargar=1`} name={x.filename} mime={x.filename.endsWith('.mp4') ? 'video/mp4' : 'video/webm'} />
+                <RecordingShare id={x.id} title={s.title} />
+                <ActionForm action={deleteRecording} inline submitLabel="🗑" submitClass="btn-secondary btn-sm" confirm="¿Eliminar esta grabación definitivamente?"><input type="hidden" name="id" value={x.id} /></ActionForm>
+              </>;
+              return (
               <li key={r.id} className="text-sm" data-testid="grabacion">
-                <b>{r.filename}</b>
-                <span className="block text-xs text-slate-500">{fmtDateTime(r.created_at, s.timezone)} · {(Number(r.size_bytes) / 1048576).toFixed(1)} MB{r.duration_sec ? ` · ${Math.max(1, Math.round(r.duration_sec / 60))} min` : ''}{r.part_no ? ` · parte ${r.part_no}` : ''}</span>
+                <b>{many ? `🎬 Clase completa — ${String(r.filename).replace(/ - parte \d+\.\w+$/, '')}` : r.filename}</b>
+                <span className="block text-xs text-slate-500">{fmtDateTime(r.created_at, s.timezone)} · {mb.toFixed(1)} MB{secs ? ` · ${Math.max(1, Math.round(secs / 60))} min` : ''}{many ? ` · ${g.length} partes que se ven seguidas, sin cortes` : ''}</span>
                 <span className="mt-1 flex flex-wrap gap-2">
-                  <a className="btn-secondary btn-sm" href={`/app/conferencias/grabacion/${r.id}/ver`}>▶ Ver</a>
-                  {canManage && <>
-                    <DownloadMenu href={`/app/conferencias/grabacion/${r.id}?descargar=1`} name={r.filename} mime={r.filename.endsWith('.mp4') ? 'video/mp4' : 'video/webm'} />
-                    <RecordingShare id={r.id} title={s.title} />
-                    <a className="btn-secondary btn-sm" href={`/app/conferencias/grabacion/${r.id}/editar`}>✂ {r.group_id ? 'Unir / cortar' : 'Cortar'}</a>
-                    <ActionForm action={deleteRecording} inline submitLabel="🗑" submitClass="btn-secondary btn-sm" confirm="¿Eliminar la grabación definitivamente?"><input type="hidden" name="id" value={r.id} /></ActionForm>
-                  </>}
+                  <a className="btn-primary btn-sm" href={`/app/conferencias/grabacion/${r.id}/ver`} data-testid="ver-grabacion">▶ {many ? 'Ver clase completa' : 'Ver'}</a>
+                  {canManage && <a className="btn-secondary btn-sm" href={`/app/conferencias/grabacion/${r.id}/editar`}>{many ? '🔗 Unir en un solo archivo / ✂ cortar' : '✂ Cortar'}</a>}
+                  {!many && recButtons(r)}
                 </span>
-              </li>))}</ul>
+                {many && canManage && <details className="mt-2"><summary className="cursor-pointer text-xs text-slate-500">Ver las {g.length} partes por separado</summary>
+                  <ul className="mt-1 space-y-1">{g.map((x: any) => (
+                    <li key={x.id} className="flex flex-wrap items-center gap-2 text-xs">Parte {x.part_no} · {Math.max(1, Math.round((Number(x.duration_sec) || 0) / 60))} min
+                      <a className="link" href={`/app/conferencias/grabacion/${x.id}/ver`}>▶</a>{recButtons(x)}</li>))}</ul></details>}
+              </li>); })}</ul>
               : <Empty>{s.recording_enabled ? 'Sin grabaciones. El anfitrión graba con «⏺ Grabar» dentro de la sala.' : 'La grabación no está habilitada en esta sesión.'}</Empty>}
           </Card>
           {moderator && active && (

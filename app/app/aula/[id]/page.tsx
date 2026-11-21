@@ -13,6 +13,9 @@ import { ActionForm, Field, Grid, SelectField, TextArea } from '@/components/for
 import { fmtDateTime } from '@/lib/format';
 import { ACCEPT, isoToLocal } from '@/lib/lms';
 import { EditBox } from '@/components/edit-box';
+import { CardStyleEditor } from '@/components/card-style-editor';
+import { cardStyle, pickCard } from '@/lib/card-style';
+import { setCardStyle } from '../tarjeta-actions';
 import { updateUnit, updateContent, updateAssignment, deleteAssignment, updateQuiz, deleteQuiz, updateExternalEval, updateAssessment, deleteAssessment, deleteThread } from '../editar-actions';
 import { createAssessment, saveGrades, togglePublish } from '../../secciones/actions';
 import { Stat } from '@/components/ui';
@@ -32,6 +35,9 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     ? await ctx.supabase.from('sections').select('id, code, room_code, teachers(first_names, last_names)').eq('course_id', s.course_id).eq('period_id', s.period_id).neq('id', id).order('code')
     : { data: [] as any[] };
   const otherRooms = others ?? [];
+  const { data: look } = await ctx.supabase.from('sections').select('card_color, card_image, courses(card_color, card_image)').eq('id', id).maybeSingle() as { data: any };
+  const pick = pickCard(look, look?.courses);
+  const banner = cardStyle(pick.color, pick.image);
   const base = `/app/aula/${id}`;
   const { data: assessments } = manager ? await ctx.supabase.from('assessments').select('id, name, weight_pct').eq('section_id', id) : { data: [] as any[] };
   const assessOpts = (assessments ?? []).map((a: any) => ({ value: a.id, label: `${a.name} (${a.weight_pct}%)` }));
@@ -48,6 +54,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     const fileIds = (contents ?? []).map((c: any) => c.file_id).filter(Boolean);
     const { data: lf } = fileIds.length ? await ctx.supabase.from('lms_files').select('id, filename, mime_type').in('id', fileIds) : { data: [] as any[] };
     const meta = new Map((lf ?? []).map((f: any) => [f.id, f]));
+    const mats = await listAttachments(ctx, 'content', (contents ?? []).map((c: any) => c.id));
     const groups = [...(units ?? []), { id: null, title: 'Otros contenidos' }];
     body = (
       <>
@@ -71,7 +78,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                 <Field label="Título" name="title" required />
                 <label className="block"><span className="label">Archivo (máx. 4 MB)</span><input type="file" name="file" accept={ACCEPT} className="text-sm" /></label>
                 <Field label="Enlace (para video o enlace, https://)" name="url" />
-                <TextArea label="Texto o descripción" name="body" rows={4} /></ActionForm></div></details>
+                <TextArea label="Texto o descripción" name="body" rows={4} />
+                <AttachFiles org={s.organization_id} label="📎 Más archivos (opcional, sin límite de 4 MB: guías, videos, presentaciones…)" /></ActionForm></div></details>
           </div>)}
         {(contents?.length || units?.length) ? groups.map((u: any) => {
           const items = (contents ?? []).filter((c: any) => (c.unit_id ?? null) === u.id);
@@ -95,6 +103,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                   </div>
                   {c.file_id && meta.get(c.file_id) && <div className="mt-2"><DownloadMenu href={`/app/aula/archivo/${c.file_id}`} name={meta.get(c.file_id).filename} mime={meta.get(c.file_id).mime_type} /></div>}
                   {c.body && <p className="mt-1 whitespace-pre-line text-sm text-slate-600">{c.body}</p>}
+                  <AttachmentList items={mats[c.id]} canRemove={manager} path={base} />
                   {manager && !c.published && <Badge>Oculto</Badge>}
                   {manager && <EditBox testid="editar-contenido">
                     <ActionForm action={updateContent} submitLabel="Guardar cambios" resetOnSuccess={false}>{hidden}<input type="hidden" name="id" value={c.id} />
@@ -104,7 +113,8 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                       <TextArea label="Texto o descripción" name="body" rows={3} defaultValue={c.body ?? ''} />
                       <Grid><Field label="Orden" name="position" type="number" defaultValue={String(c.position ?? 0)} />
                         <label className="mt-6 flex items-center gap-2"><input type="checkbox" name="published" defaultChecked={c.published} /> Visible para los estudiantes</label></Grid>
-                      {c.kind === 'archivo' && <p className="text-xs text-slate-500">Para cambiar el archivo, elimine este contenido (✕) y súbalo de nuevo.</p>}
+                      <AttachFiles org={s.organization_id} label="📎 Agregar archivos" />
+                      {c.kind === 'archivo' && <p className="text-xs text-slate-500">Para cambiar el archivo principal, elimine este contenido (✕) y súbalo de nuevo.</p>}
                     </ActionForm></EditBox>}
                   {ctx.isOwner && <div className="mt-2"><OwnerActions table="course_contents" id={c.id} active={c.published} path={`/app/aula/${id}`} name={`«${c.title}»`} /></div>}
                 </li>))}</ul> : <p className="text-sm text-slate-500">Sin contenidos aún.</p>}
@@ -117,6 +127,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     const { data: tasks } = await ctx.supabase.from('assignments').select('*').eq('section_id', id).order('due_at');
     const { data: mine } = student ? await ctx.supabase.from('submissions').select('*').eq('student_id', ctx.studentId!) : { data: [] as any[] };
     const myFiles = await listAttachments(ctx, 'submission', (mine ?? []).map((m: any) => m.id));
+    const taskMats = await listAttachments(ctx, 'assignment', (tasks ?? []).map((a: any) => a.id));
     const { data: counts } = manager ? await ctx.supabase.from('submissions').select('assignment_id, score') : { data: [] as any[] };
     const now = new Date().toISOString();
     body = (
@@ -128,6 +139,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
               <Grid cols={3}><Field label="Fecha y hora de entrega" name="due_at" type="datetime-local" required /><Field label="Puntaje máximo" name="max_score" type="number" defaultValue="100" />
                 <SelectField label="Nota oficial (evaluación del libro)" name="assessment_id" placeholder="No pasa al libro" options={assessOpts} /></Grid>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="allow_late" defaultChecked /> Aceptar entregas atrasadas (quedan marcadas)</label>
+              <AttachFiles org={s.organization_id} label="📎 Archivos de la tarea (guía, pauta, plantilla, video…)" />
             </ActionForm></div></details>)}
         <div className="space-y-4">{tasks?.length ? tasks.map((a: any) => {
           const sub = (mine ?? []).find((m: any) => m.assignment_id === a.id);
@@ -135,6 +147,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           return (
             <Card key={a.id} title={a.title} actions={a.due_at < now ? <Badge color="gray">Cerrada {fmtDateTime(a.due_at)}</Badge> : <Badge color="amber">Entrega {fmtDateTime(a.due_at)}</Badge>}>
               {a.instructions && <p className="whitespace-pre-line text-sm text-slate-700">{a.instructions}</p>}
+              {taskMats[a.id]?.length ? <div className="mt-2" data-testid="material-tarea"><p className="text-xs font-semibold text-slate-500">📎 Archivos del profesor</p><AttachmentList items={taskMats[a.id]} canRemove={manager} path={base} /></div> : null}
               <p className="mt-2 text-xs text-slate-500">Puntaje máximo {a.max_score}{a.assessment_id && ' · cuenta para la nota oficial'}</p>
               {ctx.isOwner && <div className="mt-2"><OwnerActions table="assignments" id={a.id} active={a.published} path={`/app/aula/${id}?t=tareas`} name={`la tarea «${a.title}»`} /></div>}
               {manager && <p className="mt-3"><Link className="btn-secondary btn-sm" href={`${base}/tarea/${a.id}`}>Ver entregas ({n.length}, {n.filter((x: any) => x.score == null).length} por calificar)</Link></p>}
@@ -147,6 +160,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                     <SelectField label="Nota oficial (evaluación del libro)" name="assessment_id" placeholder="No pasa al libro" defaultValue={a.assessment_id ?? ''} options={assessOpts} /></Grid>
                   <label className="flex items-center gap-2"><input type="checkbox" name="allow_late" defaultChecked={a.allow_late} /> Aceptar entregas atrasadas</label>
                   <label className="flex items-center gap-2"><input type="checkbox" name="published" defaultChecked={a.published} /> Visible para los estudiantes</label>
+                  <AttachFiles org={s.organization_id} label="📎 Agregar archivos a la tarea" />
                 </ActionForm>
                 <ActionForm action={deleteAssignment} inline submitLabel="🗑 Eliminar tarea" submitClass="btn-secondary btn-sm text-red-700"
                   confirm={`¿Eliminar la tarea «${a.title}»?${n.length ? ` Se borrarán también sus ${n.length} entrega(s).` : ''} No se puede deshacer.`}>{hidden}<input type="hidden" name="id" value={a.id} /></ActionForm>
@@ -174,6 +188,9 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     const { data: exts } = await ctx.supabase.from('external_evaluations').select('id, title, instructions, provider, opens_at, closes_at, published, assessment_id').eq('section_id', id).order('opens_at');
     const { data: acc } = (exts?.length ? await ctx.supabase.from('external_evaluation_access').select('evaluation_id, student_id, first_opened, last_opened, times, students(first_names, last_names)').in('evaluation_id', exts.map((x: any) => x.id)) : { data: [] }) as { data: any[] | null };
     const evalFiles = await listAttachments(ctx, 'external_eval', (exts ?? []).map((x: any) => x.id));
+    const [evalMats, quizMats] = await Promise.all([
+      listAttachments(ctx, 'eval_material', (exts ?? []).map((x: any) => x.id)),
+      listAttachments(ctx, 'quiz', (quizzes ?? []).map((q: any) => q.id))]);
     const uploaders = [...new Set(Object.values(evalFiles).flat().map((f) => f.created_by))];
     const { data: upl } = manager && uploaders.length ? await ctx.supabase.from('students').select('user_id, first_names, last_names').in('user_id', uploaders) : { data: [] as any[] };
     const nameOfUser = (u: string) => { const x = (upl ?? []).find((y: any) => y.user_id === u); return x ? `${x.last_names}, ${x.first_names}` : undefined; };
@@ -192,6 +209,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                 <Field label="Tiempo límite (minutos, opcional)" name="time_limit_min" type="number" /></Grid>
               <Grid><Field label="Intentos permitidos" name="max_attempts" type="number" defaultValue="1" /><SelectField label="Nota oficial (evaluación del libro)" name="assessment_id" placeholder="No pasa al libro" options={assessOpts} /></Grid>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="show_results" defaultChecked /> Mostrar puntaje al alumno (y la revisión cuando cierre)</label>
+              <AttachFiles org={s.organization_id} label="📎 Archivos del examen (lectura, imágenes, tabla de fórmulas…)" />
             </ActionForm></div></details>)}
         <h2 className="mb-3 mt-2 text-lg font-bold">🔗 Evaluaciones con enlace (Google Forms, Drive, Microsoft Forms…)</h2>
         {manager && (
@@ -202,6 +220,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
               <TextArea label="Instrucciones" name="instructions" />
               <Grid cols={3}><Field label="Abre" name="opens_at" type="datetime-local" required /><Field label="Cierra" name="closes_at" type="datetime-local" required />
                 <SelectField label="Nota oficial (evaluación del libro)" name="assessment_id" placeholder="No pasa al libro" options={assessOpts} /></Grid>
+              <AttachFiles org={s.organization_id} label="📎 Archivos de la evaluación (instrucciones, material, plantilla…)" />
               <p className="text-xs text-slate-500">🔒 Los estudiantes no ven el enlace: solo un botón «Entrar» que funciona entre la apertura y el cierre. Usted ve quién entró y cuándo. En Google Forms active «Recopilar correos» para identificar las respuestas.</p>
             </ActionForm></div></details>)}
         <div className="mb-8 space-y-3">{exts?.length ? exts.map((x: any) => {
@@ -213,6 +232,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
               <div data-testid="evaluacion-externa">
                 <p className="text-sm text-slate-600">{PROV[x.provider] ?? PROV.otro} · {fmtDateTime(x.opens_at)} → {fmtDateTime(x.closes_at)}</p>
                 {x.instructions && <p className="mt-2 whitespace-pre-line text-sm">{x.instructions}</p>}
+                {evalMats[x.id]?.length ? <div className="mt-2" data-testid="material-evaluacion"><p className="text-xs font-semibold text-slate-500">📎 Archivos del profesor</p><AttachmentList items={evalMats[x.id]} canRemove={manager} path={base} /></div> : null}
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   {(manager || open) && <a className={manager ? 'btn-secondary btn-sm' : 'btn-primary btn-sm'} href={`/app/aula/evaluacion/${x.id}`} target="_blank" rel="noopener noreferrer" data-testid="entrar-evaluacion">{manager ? '👁 Abrir enlace' : '▶ Entrar a la evaluación'}</a>}
                   {student && !open && x.opens_at > now && <span className="text-sm text-slate-500">Abre el {fmtDateTime(x.opens_at)}</span>}
@@ -236,6 +256,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                       <Field label="Cierra" name="closes_at" type="datetime-local" required defaultValue={isoToLocal(x.closes_at)} />
                       <SelectField label="Nota oficial (evaluación del libro)" name="assessment_id" placeholder="No pasa al libro" defaultValue={x.assessment_id ?? ''} options={assessOpts} /></Grid>
                     <label className="flex items-center gap-2"><input type="checkbox" name="published" defaultChecked={x.published} /> Visible para los estudiantes</label>
+                    <AttachFiles org={s.organization_id} label="📎 Agregar archivos a la evaluación" />
                   </ActionForm></EditBox>}
                 {manager && <details className="mt-2 text-sm"><summary className="cursor-pointer text-slate-500" data-testid="ingresos">👥 {who.length} estudiante(s) entraron</summary>
                   <ul className="mt-1 space-y-0.5 text-xs">{who.map((a: any) => <li key={a.student_id}>{a.students ? `${a.students.last_names}, ${a.students.first_names}` : a.student_id} · {fmtDateTime(a.first_opened)}{a.times > 1 ? ` (${a.times} veces)` : ''}</li>)}</ul></details>}
@@ -252,6 +273,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
               <p className="text-sm text-slate-600">{fmtDateTime(q.opens_at)} → {fmtDateTime(q.closes_at)}{q.time_limit_min && ` · ${q.time_limit_min} min`} · {q.max_attempts} intento(s)</p>
               {ctx.isOwner && <div className="mt-2"><OwnerActions table="quizzes" id={q.id} active={q.published} path={`/app/aula/${id}?t=examenes`} name={`la prueba «${q.title}»`} /></div>}
               {q.instructions && <p className="mt-2 whitespace-pre-line text-sm">{q.instructions}</p>}
+              {quizMats[q.id]?.length ? <div className="mt-2" data-testid="material-examen"><p className="text-xs font-semibold text-slate-500">📎 Archivos del profesor</p><AttachmentList items={quizMats[q.id]} canRemove={manager} path={base} /></div> : null}
               {manager && <p className="mt-3"><Link className="btn-secondary btn-sm" href={`${base}/examen/${q.id}`}>Preguntas y resultados</Link></p>}
               {manager && <EditBox label="✏ Editar o eliminar examen" testid="editar-examen">
                 <ActionForm action={updateQuiz} submitLabel="Guardar cambios" resetOnSuccess={false}>{hidden}<input type="hidden" name="id" value={q.id} />
@@ -262,6 +284,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                   <Grid><Field label="Intentos permitidos" name="max_attempts" type="number" defaultValue={String(q.max_attempts)} />
                     <SelectField label="Nota oficial (evaluación del libro)" name="assessment_id" placeholder="No pasa al libro" defaultValue={q.assessment_id ?? ''} options={assessOpts} /></Grid>
                   <label className="flex items-center gap-2"><input type="checkbox" name="show_results" defaultChecked={q.show_results} /> Mostrar puntaje al alumno</label>
+                  <AttachFiles org={s.organization_id} label="📎 Agregar archivos al examen" />
                   <p className="text-xs text-slate-500">Las preguntas se editan en «Preguntas y resultados».</p>
                 </ActionForm>
                 <ActionForm action={deleteQuiz} inline submitLabel="🗑 Eliminar examen" submitClass="btn-secondary btn-sm text-red-700"
@@ -419,12 +442,26 @@ export default async function Page({ params, searchParams }: { params: Promise<{
 
   return (
     <>
-      <PageHeader title={s.courses?.name ?? 'Curso'} subtitle={`${s.courses?.code ?? ''} · Sala ${s.code} · ${s.academic_periods?.name ?? ''}${s.teachers ? ` · Profesor: ${s.teachers.first_names} ${s.teachers.last_names}` : ''}`} />
+      {banner.style ? (
+        <div className={`mb-4 rounded-2xl p-5 shadow-sm sm:p-6 ${banner.light ? 'text-white' : ''}`} style={banner.style} data-testid="portada-curso">
+          <p className={`text-xs font-bold ${banner.light ? 'text-white/85' : 'text-brand-700'}`}>{s.courses?.code} · Sala {s.code} · {s.academic_periods?.name ?? ''}</p>
+          <h1 className="mt-1 text-2xl font-bold sm:text-3xl">{s.courses?.name ?? 'Curso'}</h1>
+          {s.teachers && <p className={`mt-1 text-sm ${banner.light ? 'text-white/85' : 'text-slate-600'}`}>Profesor: {s.teachers.first_names} {s.teachers.last_names}</p>}
+        </div>
+      ) : <PageHeader title={s.courses?.name ?? 'Curso'} subtitle={`${s.courses?.code ?? ''} · Sala ${s.code} · ${s.academic_periods?.name ?? ''}${s.teachers ? ` · Profesor: ${s.teachers.first_names} ${s.teachers.last_names}` : ''}`} />}
       <div className="flex flex-wrap items-center gap-3">
         <Link href="/app/aula" className="link text-sm">← Mis cursos</Link>
         {s.room_code && <CopyCode code={s.room_code} />}
         {manager && <Link className="link text-sm" href={`/app/secciones/${s.id}`}>👥 Estudiantes de esta sala</Link>}
       </div>
+      {(manager || can(ctx, 'sections.edit')) && (
+        <EditBox label="🎨 Personalizar tarjeta (color y fondo)" testid="personalizar-tarjeta" className="mt-3 max-w-xl">
+          <ActionForm action={setCardStyle} submitLabel="Guardar estilo" resetOnSuccess={false}>
+            <input type="hidden" name="section_id" value={id} />
+            <CardStyleEditor color={look?.card_color ?? look?.courses?.card_color ?? null} image={look?.card_image ?? look?.courses?.card_image ?? null}
+              title={s.courses?.name ?? 'Curso'} subtitle={`${s.courses?.code ?? ''} · Sala ${s.code}`} allowCourse={can(ctx, 'academic.edit')} />
+          </ActionForm>
+        </EditBox>)}
       {otherRooms.length > 0 && (
         <p className="mt-2 text-sm text-slate-600" data-testid="otras-salas">Otras salas de este curso: {otherRooms.map((r: any, i: number) => (
           <span key={r.id}>{i ? ' · ' : ''}<Link className="link" href={`/app/aula/${r.id}`}>Sala {r.code}</Link> <span className="font-mono text-xs">({r.room_code})</span>{r.teachers ? ` — ${r.teachers.first_names} ${r.teachers.last_names}` : ''}</span>))}</p>)}

@@ -21,7 +21,7 @@ with sync_playwright() as pw:
     check('creada' in status_msg(t), 'Profesor crea una unidad')
     go(t, URL); t.click('summary:has-text("Agregar contenido")'); sel_re(t, 'select[name=unit_id]', 'Unidad 1')
     t.locator('details:has(summary:has-text("Agregar contenido")) input[name=title]').fill('Apunte clase 1')
-    t.set_input_files('input[name=file]', pdf); t.click('button:has-text("Publicar")')
+    t.locator('details:has(summary:has-text("Agregar contenido")) input[name=file]').set_input_files(pdf); t.click('button:has-text("Publicar")')
     check('publicado' in status_msg(t), 'Profesor sube un PDF al curso')
     # Tarea
     go(t, URL + '?t=tareas'); t.click('summary:has-text("Nueva tarea")'); t.fill('input[name=title]', 'Tarea 1 E2E')

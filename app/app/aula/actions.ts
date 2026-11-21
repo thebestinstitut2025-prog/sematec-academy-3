@@ -1,6 +1,6 @@
 'use server';
 import { revalidatePath } from 'next/cache';
-import { attachTo, readAttachmentIds } from '@/lib/attachments';
+import { attachMaterial, attachTo, readAttachmentIds } from '@/lib/attachments';
 import { getContext } from '@/lib/context';
 import { fail, guard, num, ok, reqStr, str, type ActionResult } from '@/lib/actions';
 import { localToIso, saveLmsFile } from '@/lib/lms';
@@ -22,17 +22,21 @@ export async function addUnit(fd: FormData): Promise<ActionResult> {
 export async function addContent(fd: FormData): Promise<ActionResult> {
   return guard(async () => {
     const ctx = await getContext(); const section = reqStr(fd, 'section_id', 'sección');
+    if (fd.get('attachments_pending') === '1') return fail('Espere a que terminen de subir los archivos y vuelva a pulsar el botón.');
     const kind = reqStr(fd, 'kind', 'Tipo');
     const file = kind === 'archivo' ? await saveLmsFile(ctx, fd.get('file') as File, section, 'content') : null;
     if (kind === 'archivo' && !file) return fail('Seleccione el archivo.');
     const url = str(fd, 'url');
     if (url && !url.startsWith('https://')) return fail('El enlace debe comenzar con https://');
-    const { error } = await ctx.supabase.from('course_contents').insert({
+    const { data, error } = await ctx.supabase.from('course_contents').insert({
       organization_id: ctx.orgId, section_id: section, unit_id: str(fd, 'unit_id'), kind, title: reqStr(fd, 'title', 'Título'),
       body: str(fd, 'body'), url: kind === 'video' || kind === 'enlace' ? url : null, file_id: file, position: num(fd, 'position') ?? 0,
-    });
+    }).select('id').single();
     if (error) return fail(error);
-    back(section); return ok('Contenido publicado.');
+    const m = await attachMaterial(ctx, fd, 'content', data.id);
+    back(section);
+    if (m.error) return fail(`El contenido se publicó, pero los archivos no: ${m.error}`);
+    return ok(`Contenido publicado${m.n ? ` con ${m.n} archivo(s)` : ''}.`);
   });
 }
 
@@ -50,13 +54,17 @@ export async function deleteContent(fd: FormData): Promise<ActionResult> {
 export async function createAssignment(fd: FormData): Promise<ActionResult> {
   return guard(async () => {
     const ctx = await getContext(); const section = reqStr(fd, 'section_id', 'sección');
-    const { error } = await ctx.supabase.from('assignments').insert({
+    if (fd.get('attachments_pending') === '1') return fail('Espere a que terminen de subir los archivos y vuelva a pulsar el botón.');
+    const { data, error } = await ctx.supabase.from('assignments').insert({
       organization_id: ctx.orgId, section_id: section, title: reqStr(fd, 'title', 'Título'), instructions: str(fd, 'instructions'),
       due_at: localToIso(reqStr(fd, 'due_at', 'Fecha de entrega')), max_score: num(fd, 'max_score') ?? 100,
       allow_late: !!fd.get('allow_late'), assessment_id: str(fd, 'assessment_id'),
-    });
+    }).select('id').single();
     if (error) return fail(error);
-    back(section); return ok('Tarea publicada.');
+    const m = await attachMaterial(ctx, fd, 'assignment', data.id);
+    back(section);
+    if (m.error) return fail(`La tarea se publicó, pero los archivos no: ${m.error}`);
+    return ok(`Tarea publicada${m.n ? ` con ${m.n} archivo(s)` : ''}.`);
   });
 }
 
@@ -95,6 +103,7 @@ export async function gradeSubmission(fd: FormData): Promise<ActionResult> {
 export async function createQuiz(fd: FormData): Promise<ActionResult> {
   return guard(async () => {
     const ctx = await getContext(); const section = reqStr(fd, 'section_id', 'sección');
+    if (fd.get('attachments_pending') === '1') return fail('Espere a que terminen de subir los archivos y vuelva a pulsar el botón.');
     const { data, error } = await ctx.supabase.from('quizzes').insert({
       organization_id: ctx.orgId, section_id: section, title: reqStr(fd, 'title', 'Título'), instructions: str(fd, 'instructions'),
       opens_at: localToIso(reqStr(fd, 'opens_at', 'Apertura')), closes_at: localToIso(reqStr(fd, 'closes_at', 'Cierre')),
@@ -102,7 +111,10 @@ export async function createQuiz(fd: FormData): Promise<ActionResult> {
       show_results: !!fd.get('show_results'), assessment_id: str(fd, 'assessment_id'),
     }).select('id').single();
     if (error) return fail(error);
-    back(section); return ok('Examen creado. Agregue las preguntas y luego publíquelo.', data.id);
+    const m = await attachMaterial(ctx, fd, 'quiz', data.id);
+    back(section);
+    if (m.error) return fail(`El examen se creó, pero los archivos no: ${m.error}`);
+    return ok(`Examen creado${m.n ? ` con ${m.n} archivo(s)` : ''}. Agregue las preguntas y luego publíquelo.`, data.id);
   });
 }
 
@@ -215,6 +227,7 @@ function providerOf(url: string) {
 export async function createExternalEval(fd: FormData): Promise<ActionResult> {
   return guard(async () => {
     const ctx = await getContext(); const section = reqStr(fd, 'section_id', 'sección');
+    if (fd.get('attachments_pending') === '1') return fail('Espere a que terminen de subir los archivos y vuelva a pulsar el botón.');
     let url = reqStr(fd, 'url', 'Enlace').trim();
     if (!/^https?:\/\//i.test(url)) url = `https://${url}`;
     url = url.replace(/^http:\/\//i, 'https://');
@@ -222,12 +235,15 @@ export async function createExternalEval(fd: FormData): Promise<ActionResult> {
     if (url.length > 2000 || /[\s<>"]/.test(url)) return fail('El enlace no es válido.');
     const opens = localToIso(reqStr(fd, 'opens_at', 'Apertura')), closes = localToIso(reqStr(fd, 'closes_at', 'Cierre'));
     if (new Date(closes) <= new Date(opens)) return fail('La fecha de cierre debe ser posterior a la de apertura.');
-    const { error } = await ctx.supabase.from('external_evaluations').insert({
+    const { data, error } = await ctx.supabase.from('external_evaluations').insert({
       organization_id: ctx.orgId, section_id: section, title: reqStr(fd, 'title', 'Título').slice(0, 160), instructions: str(fd, 'instructions')?.slice(0, 4000) ?? null,
       url, provider: providerOf(url), opens_at: opens, closes_at: closes, assessment_id: str(fd, 'assessment_id'),
-    });
+    }).select('id').single();
     if (error) return fail(error);
-    back(section); return ok('Evaluación creada. Los estudiantes verán el botón «Entrar» solo mientras esté abierta.');
+    const m = await attachMaterial(ctx, fd, 'eval_material', data.id);
+    back(section);
+    if (m.error) return fail(`La evaluación se creó, pero los archivos no: ${m.error}`);
+    return ok(`Evaluación creada${m.n ? ` con ${m.n} archivo(s)` : ''}. Los estudiantes verán el botón «Entrar» solo mientras esté abierta.`);
   });
 }
 

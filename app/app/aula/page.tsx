@@ -4,6 +4,7 @@ import { getContext, can, requireOrg } from '@/lib/context';
 import { PageHeader, Card, Empty } from '@/components/ui';
 import { ActionForm } from '@/components/forms';
 import { enterRoomByCode } from './sala-actions';
+import { cardStyle, pickCard } from '@/lib/card-style';
 
 export const metadata = { title: 'Aula de aprendizaje' };
 
@@ -22,6 +23,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ a
     q = q.in('id', (se ?? []).map((x: any) => x.section_id).concat(['00000000-0000-0000-0000-000000000000']));
   } else if (ctx.teacherId && !can(ctx, 'sections.view')) q = q.eq('teacher_id', ctx.teacherId);
   const { data: sections } = await q;
+  // 🎨 Color y fondo de cada tarjeta (si la actualización aún no está instalada, se ven como siempre)
+  const { data: looks } = sections?.length ? await ctx.supabase.from('sections').select('id, card_color, card_image, courses(card_color, card_image)').in('id', sections.map((x: any) => x.id)) : { data: null };
+  const lookOf = (id: string) => { const l: any = (looks ?? []).find((x: any) => x.id === id); return cardStyle(...Object.values(pickCard(l, l?.courses)) as [string | null, string | null]); };
   const perCourse = (sections ?? []).reduce<Record<string, number>>((a, x: any) => { a[x.course_id] = (a[x.course_id] ?? 0) + 1; return a; }, {});
   const staff = can(ctx, 'students.view');
   const { data: rep } = staff ? await ctx.supabase.rpc('aula_access_report', { p_org: orgId }) : { data: null };
@@ -44,12 +48,14 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ a
       {sections?.length ? (
         <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {sections.map((s: any) => (
-            <Link key={s.id} href={`/app/aula/${s.id}`} className="card card-pad block transition hover:border-brand-500">
-              <p className="text-xs font-bold text-brand-600">{s.courses?.code} · Sala {s.code}{perCourse[s.course_id] > 1 ? ` (de ${perCourse[s.course_id]})` : ''}</p>
+            (() => { const k = lookOf(s.id); return (
+            <Link key={s.id} href={`/app/aula/${s.id}`} style={k.style} data-testid="tarjeta-curso"
+              className={`card card-pad block min-h-[9rem] transition hover:-translate-y-0.5 hover:shadow-lg ${k.light ? 'border-transparent text-white' : 'hover:border-brand-500'}`}>
+              <p className={`text-xs font-bold ${k.light ? 'text-white/85' : 'text-brand-600'}`}>{s.courses?.code} · Sala {s.code}{perCourse[s.course_id] > 1 ? ` (de ${perCourse[s.course_id]})` : ''}</p>
               <h2 className="mt-1 text-lg font-bold">{s.courses?.name}</h2>
-              <p className="mt-2 text-sm text-slate-500">{s.academic_periods?.name}{s.teachers && ` · ${s.teachers.first_names} ${s.teachers.last_names}`}</p>
-              <p className="mt-2 font-mono text-xs tracking-wider text-slate-500" data-testid="tarjeta-codigo">🔑 {s.room_code}</p>
-            </Link>))}
+              <p className={`mt-2 text-sm ${k.light ? 'text-white/85' : 'text-slate-500'}`}>{s.academic_periods?.name}{s.teachers && ` · ${s.teachers.first_names} ${s.teachers.last_names}`}</p>
+              <p className={`mt-2 font-mono text-xs tracking-wider ${k.light ? 'text-white/80' : 'text-slate-500'}`} data-testid="tarjeta-codigo">🔑 {s.room_code}</p>
+            </Link>); })()))}
         </div>
       ) : can(ctx, 'sections.create') ? (
         <Card title="Aún no hay cursos: créelos en 5 pasos">

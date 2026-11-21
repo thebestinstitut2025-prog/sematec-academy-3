@@ -2,6 +2,7 @@
 import '@livekit/components-styles';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { createPortal } from 'react-dom';
 import {
   LiveKitRoom, RoomAudioRenderer, StartAudio, ConnectionStateToast, GridLayout, FocusLayoutContainer, FocusLayout,
   CarouselLayout, ParticipantTile, TrackToggle, DisconnectButton, MediaDeviceMenu, useTracks, useChat, useParticipants,
@@ -177,6 +178,9 @@ function Stage({ sessionId, title, recording, chatEnabled, orgId, sectionId, gue
   const [boardHidden, setBoardHidden] = useState(false);
   const narrow = useNarrow();
   const [more, setMore] = useState(false);
+  // ⏺ La grabación vive en UN solo componente que nunca se desmonta al abrir/cerrar menús o cambiar el tamaño de la ventana
+  const [recSlotDesk, setRecSlotDesk] = useState<HTMLElement | null>(null);
+  const [recSlotMore, setRecSlotMore] = useState<HTMLElement | null>(null);
   const [moreDesk, setMoreDesk] = useState(false);
   const evals = useEvalLaunch();
   const [, force] = useState(0);
@@ -515,7 +519,7 @@ function Stage({ sessionId, title, recording, chatEnabled, orgId, sectionId, gue
         {mod && !group && !guest && <button className={btn(panel === 'groups')} onClick={() => toggle('groups')} data-testid="boton-grupos">👥 Grupos</button>}
         <button className={btn(['tools', 'notes', 'qa', 'apps', 'attendance', 'roomcfg', 'mysettings'].includes(panel ?? ''))} onClick={() => toggle('tools')} data-testid="boton-herramientas">🧰 Herramientas{tools.qa.some((q) => !q.answered) && <span className="ml-1 rounded-full bg-blue-500 px-1.5 text-xs">{tools.qa.filter((q) => !q.answered).length}</span>}</button>
         <button className="lk-button" onClick={() => setLayout(layout === 'grid' ? 'speaker' : 'grid')} title="Cambiar vista">{layout === 'grid' ? '🗣 Vista orador' : '▦ Vista galería'}</button>
-        {mod && recording && !guest && <Recorder sessionId={sessionId} title={title} say={say} broadcast={(on) => { sendRec(enc.encode(on ? '1' : '0'), { reliable: true }); setRecBy(on ? (localParticipant.name ?? 'Usted') : null); }} />}
+        <span ref={setRecSlotMore} className="contents" />
         <button className="lk-button" onClick={() => (document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen()).catch(() => {})}>⛶ Pantalla completa</button>
         </div>
       </>)}
@@ -537,7 +541,7 @@ function Stage({ sessionId, title, recording, chatEnabled, orgId, sectionId, gue
           badge={unread > 0 ? <span className="zbadge bg-red-600">{unread}</span> : null} />
         {canShare && <ShareButton say={say} onFail={() => isMobile && setShareHelp(true)} onCamOff={() => { restoreCam.current = true; }} />}
         {sharePerm && !canShare && <ZB icon="📲" label="Compartir pantalla" onClick={() => setShareHelp(true)} testid="compartir-celular" />}
-        {mod && recording && !guest && <Recorder sessionId={sessionId} title={title} say={say} broadcast={(on) => { sendRec(enc.encode(on ? '1' : '0'), { reliable: true }); setRecBy(on ? (localParticipant.name ?? 'Usted') : null); }} />}
+        <span ref={setRecSlotDesk} className="contents" />
         {mod && !group && !guest && <ZB icon="🔲" label="Grupos" active={panel === 'groups'} onClick={() => toggle('groups')} testid="boton-grupos" />}
         {tools.can('reactions') && <span className="relative">
           <ZB icon="😀" label="Reacciones" active={showReactions} onClick={() => setShowReactions((v) => !v)} testid="boton-reacciones"
@@ -573,6 +577,8 @@ function Stage({ sessionId, title, recording, chatEnabled, orgId, sectionId, gue
         </>)}
         <span className={narrow ? 'contents' : 'flex w-[13rem] shrink-0 justify-end'}><DisconnectButton data-testid="boton-salir">Salir</DisconnectButton></span>
       </footer>
+      {mod && recording && !guest && <Recorder sessionId={sessionId} title={title} say={say} target={narrow ? (more ? recSlotMore : null) : recSlotDesk}
+        broadcast={(on) => { sendRec(enc.encode(on ? '1' : '0'), { reliable: true }); setRecBy(on ? (localParticipant.name ?? 'Usted') : null); }} />}
     </div>
     {(mini || pip) && (
       <MiniDock title={title} focus={miniFocus} recording={!!recBy} unread={unread} hands={hands.length} people={participants.length}
@@ -844,7 +850,7 @@ type Rect = { x: number; y: number; w: number; h: number };
  * toda la sala, pantalla completa con movimientos, ventana elegida, solo un área o solo la pantalla compartida.
  * Se puede pausar y reanudar para grabar solo lo que interesa.
  */
-function Recorder({ sessionId, title, say, broadcast }: { sessionId: string; title: string; say: (m: string) => void; broadcast: (on: boolean) => void }) {
+function Recorder({ sessionId, title, say, broadcast, target }: { sessionId: string; title: string; say: (m: string) => void; broadcast: (on: boolean) => void; target: HTMLElement | null }) {
   const room = useRoomContext();
   const [state, setState] = useState<'idle' | 'setup' | 'area' | 'rec' | 'finishing' | 'done'>('idle');
   const [mode, setMode] = useState<RecMode>('tab');
@@ -879,7 +885,17 @@ function Recorder({ sessionId, title, say, broadcast }: { sessionId: string; tit
     }, 1000);
     return () => clearInterval(t);
   }, [state]);
-  useEffect(() => () => { clearInterval(timer.current); clearInterval(cropTimer.current); }, []);
+  useEffect(() => () => {
+    clearInterval(timer.current); clearInterval(cropTimer.current);
+    // Si se sale de la sala grabando, se cierra la parte actual para que se guarde (no se pierde nada)
+    if (rec.current && rec.current.state !== 'inactive') { stopping.current = true; try { rec.current.stop(); } catch { /* */ } }
+  }, []);
+  // Aviso antes de cerrar o recargar la pestaña mientras se graba o se suben partes
+  useEffect(() => {
+    if (state !== 'rec' && state !== 'finishing') return;
+    const warn = (e: BeforeUnloadEvent) => { e.preventDefault(); e.returnValue = ''; };
+    window.addEventListener('beforeunload', warn); return () => window.removeEventListener('beforeunload', warn);
+  }, [state]);
   if (!canDisplayCapture()) return null;
 
   const fps = hq ? 30 : 24;
@@ -908,15 +924,22 @@ function Recorder({ sessionId, title, say, broadcast }: { sessionId: string; tit
     const r = new MediaRecorder(out.current!, { mimeType: mime, videoBitsPerSecond: bitrate });
     const chunks: Blob[] = [];
     const n = ++counter.current; segStart.current = elapsed.current;
+    const from = elapsed.current;
     r.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
     r.onstop = () => {
-      const dur = Math.max(1, Math.round((elapsed.current - segStart.current) / 1000));
+      const dur = Math.max(1, Math.round((elapsed.current - from) / 1000));
       if (chunks.length) save(n, new Blob(chunks, { type: 'video/webm' }), dur);
-      if (!stopping.current) { startSegment(); return; }
+      // Solo la última parte (al detener) termina la grabación; al rotar, la siguiente ya está grabando
+      if (!stopping.current || rec.current !== r) return;
       cleanup(); broadcast(false); setState('finishing');
       queue.current.then(() => setState('done'));
     };
     r.start(5000); rec.current = r;
+  };
+  /** Cambia de parte SIN cortes: la nueva parte empieza a grabar antes de cerrar la anterior. */
+  const rotate = () => {
+    const old = rec.current; if (!old || old.state !== 'recording') return;
+    startSegment(); try { old.stop(); } catch { /* */ }
   };
 
   const beginRecording = (video: MediaStreamTrack) => {
@@ -926,7 +949,7 @@ function Recorder({ sessionId, title, say, broadcast }: { sessionId: string; tit
     startSegment();
     // Rota la parte cada 2 minutos de grabación efectiva (no mientras está en pausa)
     timer.current = setInterval(() => {
-      if (rec.current?.state === 'recording' && elapsed.current - segStart.current >= ((globalThis as { __sematecSegmentMs?: number }).__sematecSegmentMs ?? SEGMENT_MS)) rec.current.stop();
+      if (rec.current?.state === 'recording' && elapsed.current - segStart.current >= ((globalThis as { __sematecSegmentMs?: number }).__sematecSegmentMs ?? SEGMENT_MS)) rotate();
     }, 1000);
     setState('rec'); broadcast(true);
     say('🔴 Grabando: se guarda en la plataforma cada 2 minutos. Todos ven el aviso.');
@@ -1009,6 +1032,7 @@ function Recorder({ sessionId, title, say, broadcast }: { sessionId: string; tit
   const saved = parts.filter((p) => p.status === 'guardada');
   const first = [...saved].sort((a, b) => a.n - b.n)[0];
 
+  const view = () => {
   if (state === 'area') return (
     <div className="fixed inset-0 z-50 cursor-crosshair bg-black/30" data-testid="marcar-area"
       onMouseDown={(e) => { origin.current = { x: e.clientX, y: e.clientY }; setDrag({ x: e.clientX, y: e.clientY, w: 0, h: 0 }); }}
@@ -1053,10 +1077,20 @@ function Recorder({ sessionId, title, say, broadcast }: { sessionId: string; tit
             : <button className="underline" onClick={() => download(p)} title={p.error}>⚠ ⬇ Descargar</button>}</span>
         </li>))}</ul>
       <span className="mt-3 flex flex-wrap gap-2">
+        {first && state === 'done' && <a className="rounded-lg bg-emerald-600 px-3 py-2" href={`/app/conferencias/grabacion/${first.id}/ver`} target="_blank" rel="noopener noreferrer">▶ Ver la clase completa</a>}
         {first && state === 'done' && <a className="rounded-lg bg-blue-600 px-3 py-2" href={`/app/conferencias/grabacion/${first.id}/editar`} target="_blank" rel="noopener noreferrer">✂ Unir, cortar, descargar o enviar</a>}
         <button className="rounded-lg px-3 py-2 opacity-70 hover:opacity-100" disabled={state === 'finishing'} onClick={() => { setParts([]); setState('idle'); }}>Cerrar</button>
       </span>
       {parts.some((p) => p.status === 'error') && <span className="mt-2 block text-xs text-amber-300">Las partes con ⚠ no se pudieron subir (revise el plan de almacenamiento): descárguelas en este equipo antes de cerrar.</span>}
     </span>
   );
+  };
+  const ui = view();
+  // Paneles flotantes (marcar área, guardando, lista final): se muestran siempre
+  if (state === 'area' || state === 'finishing' || state === 'done') return ui;
+  // Botones: dentro de la barra (o del menú «Más» en el celular)
+  if (target) return createPortal(ui, target);
+  // Menú cerrado en el celular: la grabación SIGUE y se muestra un botón flotante para detenerla
+  if (state === 'rec') return <div className="fixed right-2 top-14 z-50 rounded-xl bg-black/70 p-1 shadow-xl" data-testid="grabacion-flotante">{ui}</div>;
+  return null;
 }

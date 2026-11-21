@@ -2,7 +2,7 @@ import 'server-only';
 import type { getContext } from '@/lib/context';
 
 type Ctx = Awaited<ReturnType<typeof getContext>>;
-export type AttachType = 'submission' | 'quiz_attempt' | 'external_eval' | 'message';
+export type AttachType = 'submission' | 'quiz_attempt' | 'external_eval' | 'message' | 'assignment' | 'quiz' | 'eval_material' | 'content';
 export type AttachItem = { id: string; entity_id: string; file_id: string; created_by: string; created_at: string; name: string; size: number; mime: string; mine: boolean };
 const UUID = /^[0-9a-f-]{36}$/i;
 
@@ -36,4 +36,12 @@ export async function listAttachments(ctx: Ctx, type: AttachType, entities: stri
       name: f.name, size: Number(f.size_bytes), mime: f.mime_type, mine: f.created_by === ctx.user.id });
   }
   return out;
+}
+
+/** Material del profesor: lee los archivos del formulario y los adjunta (devuelve un texto de error o null). */
+export async function attachMaterial(ctx: Ctx, fd: FormData, type: 'assignment' | 'quiz' | 'eval_material' | 'content', entity: string): Promise<{ n: number; error: string | null }> {
+  const ids = readAttachmentIds(fd);
+  if (!Array.isArray(ids)) return { n: 0, error: ids.error };
+  const err = await attachTo(ctx, type, entity, ids);
+  return { n: err ? 0 : ids.length, error: err };
 }

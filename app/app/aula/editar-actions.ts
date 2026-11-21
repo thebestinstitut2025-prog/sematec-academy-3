@@ -9,6 +9,7 @@ import { redirect } from 'next/navigation';
 import { getContext } from '@/lib/context';
 import { fail, guard, num, ok, reqStr, str, ValidationError, type ActionResult } from '@/lib/actions';
 import { localToIso } from '@/lib/lms';
+import { attachMaterial } from '@/lib/attachments';
 
 const back = (s: string) => revalidatePath(`/app/aula/${s}`, 'layout');
 const NO_PERM = 'No tiene permiso para modificarlo (o ya fue eliminado).';
@@ -51,7 +52,10 @@ export async function updateContent(fd: FormData): Promise<ActionResult> {
       published: fd.get('published') === 'on', ...(cur.kind === 'video' || cur.kind === 'enlace' ? { url } : {}),
     }, { count: 'exact' }).eq('id', id);
     if (error) return fail(error); if (!count) return fail(NO_PERM);
-    back(section); return ok('Contenido actualizado.');
+    const m = await attachMaterial(ctx, fd, 'content', id);
+    back(section);
+    if (m.error) return fail(`Se guardaron los cambios, pero los archivos no: ${m.error}`);
+    return ok(`Contenido actualizado${m.n ? ` con ${m.n} archivo(s) nuevo(s)` : ''}.`);
   });
 }
 
@@ -70,7 +74,10 @@ export async function updateAssignment(fd: FormData): Promise<ActionResult> {
       allow_late: fd.get('allow_late') === 'on', assessment_id: str(fd, 'assessment_id'), published: fd.get('published') === 'on',
     }, { count: 'exact' }).eq('id', id);
     if (error) return fail(error); if (!count) return fail(NO_PERM);
-    back(section); return ok('Tarea actualizada.');
+    const m = await attachMaterial(ctx, fd, 'assignment', id);
+    back(section);
+    if (m.error) return fail(`Se guardaron los cambios, pero los archivos no: ${m.error}`);
+    return ok(`Tarea actualizada${m.n ? ` con ${m.n} archivo(s) nuevo(s)` : ''}.`);
   });
 }
 
@@ -90,15 +97,19 @@ export async function updateQuiz(fd: FormData): Promise<ActionResult> {
   return guard(async () => {
     const ctx = await getContext(); const section = reqStr(fd, 'section_id', 'sección');
     const [opens, closes] = dates(fd, 'opens_at', 'closes_at', 'Apertura', 'Cierre');
+    const id = reqStr(fd, 'id', 'examen');
     const tl = num(fd, 'time_limit_min'), att = num(fd, 'max_attempts') ?? 1;
     if (tl != null && (tl < 1 || tl > 600)) return fail('El tiempo límite debe estar entre 1 y 600 minutos (o vacío).');
     if (att < 1 || att > 10) return fail('Los intentos permitidos deben estar entre 1 y 10.');
     const { error, count } = await ctx.supabase.from('quizzes').update({
       title: reqStr(fd, 'title', 'Título').slice(0, 200), instructions: str(fd, 'instructions'), opens_at: opens, closes_at: closes,
       time_limit_min: tl, max_attempts: att, show_results: fd.get('show_results') === 'on', assessment_id: str(fd, 'assessment_id'),
-    }, { count: 'exact' }).eq('id', reqStr(fd, 'id', 'examen'));
+    }, { count: 'exact' }).eq('id', id);
     if (error) return fail(error); if (!count) return fail(NO_PERM);
-    back(section); return ok('Examen actualizado.');
+    const m = await attachMaterial(ctx, fd, 'quiz', id);
+    back(section);
+    if (m.error) return fail(`Se guardaron los cambios, pero los archivos no: ${m.error}`);
+    return ok(`Examen actualizado${m.n ? ` con ${m.n} archivo(s) nuevo(s)` : ''}.`);
   });
 }
 
@@ -162,12 +173,16 @@ export async function updateExternalEval(fd: FormData): Promise<ActionResult> {
       link = { url, provider };
     }
     const [opens, closes] = dates(fd, 'opens_at', 'closes_at', 'Apertura', 'Cierre');
+    const id = reqStr(fd, 'id', 'evaluación');
     const { error, count } = await ctx.supabase.from('external_evaluations').update({
       title: reqStr(fd, 'title', 'Título').slice(0, 160), instructions: str(fd, 'instructions')?.slice(0, 4000) ?? null,
       ...(link ?? {}), opens_at: opens, closes_at: closes, assessment_id: str(fd, 'assessment_id'), published: fd.get('published') === 'on',
-    }, { count: 'exact' }).eq('id', reqStr(fd, 'id', 'evaluación'));
+    }, { count: 'exact' }).eq('id', id);
     if (error) return fail(error); if (!count) return fail(NO_PERM);
-    back(section); return ok(link ? 'Evaluación actualizada (con el nuevo enlace).' : 'Evaluación actualizada.');
+    const m = await attachMaterial(ctx, fd, 'eval_material', id);
+    back(section);
+    if (m.error) return fail(`Se guardaron los cambios, pero los archivos no: ${m.error}`);
+    return ok(`Evaluación actualizada${link ? ' (con el nuevo enlace)' : ''}${m.n ? ` con ${m.n} archivo(s) nuevo(s)` : ''}.`);
   });
 }
 
