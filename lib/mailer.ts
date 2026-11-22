@@ -31,7 +31,7 @@ function fromFor(c: ReturnType<typeof mailConfig>, meta?: MailMeta) {
 }
 
 // Correos con enlaces de acceso: nunca se guarda su contenido (el enlace da entrada a la cuenta)
-const SECRET_KINDS = new Set(['recuperar', 'cuenta', 'acceso', 'invitacion', 'mfa']);
+const SECRET_KINDS = new Set(['recuperar', 'cuenta', 'acceso', 'invitacion', 'mfa', 'archivo']);
 /** Guarda en el registro de correos si se envió o por qué falló, con su contenido para poder reenviarlo. */
 async function logMail(to: string, subject: string, status: 'sent' | 'failed' | 'off', error: string | null, meta?: MailMeta, body?: { html: string; text: string; files?: boolean }) {
   try {

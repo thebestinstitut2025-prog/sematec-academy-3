@@ -20,15 +20,24 @@ export function kindOf(name: string, mime: string): Kind {
   return 'other';
 }
 
+// Formatos que sirven para cualquier documento o imagen, aunque el original sea de otro tipo
+const PPTX_ANY: Fmt = { id: 'pptx-any', label: 'PowerPoint (.pptx)', ext: 'pptx', mime: 'application/vnd.openxmlformats-officedocument.presentationml.presentation', hint: 'Una diapositiva por página' };
+const PDF_ANY: Fmt = { id: 'pdf-any', label: 'PDF', ext: 'pdf', mime: 'application/pdf' };
+const PNG_ZIP: Fmt = { id: 'png-zip', label: 'Imágenes PNG (.zip)', ext: 'zip', mime: 'application/zip', hint: 'Una imagen por página' };
+const WORD_ANY: Fmt = { id: 'docx', label: 'Word (.docx)', ext: 'docx', mime: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' };
+
 export function formatsFor(kind: Kind): Fmt[] {
+  const plus = (list: Fmt[], extra: Fmt[]) => [...list, ...extra.filter((e) => !list.some((f) => f.ext === e.ext))];
+  switch (kind) {
+    case 'image': return plus(IMAGE_FORMATS, [PDF_ANY, PPTX_ANY]);
+    case 'doc': return plus(DOC_FORMATS, [PPTX_ANY, PNG_ZIP]);
+    case 'sheet': return plus(SHEET_FORMATS, [PPTX_ANY, PNG_ZIP]);
+    case 'slides': return plus(SLIDE_FORMATS, [PNG_ZIP, { ...WORD_ANY, hint: 'Solo el texto' }]);
+    case 'pdf': return [PPTX_ANY, PNG_ZIP, ...DOC_FORMATS.filter((f) => f.id !== 'pdf').map((f) => ({ ...f, label: `${f.label} (solo el texto)` }))];
+  }
   switch (kind) {
     case 'video': return VIDEO_FORMATS;
     case 'audio': return AUDIO_FORMATS;
-    case 'image': return IMAGE_FORMATS;
-    case 'doc': return DOC_FORMATS;
-    case 'sheet': return SHEET_FORMATS;
-    case 'slides': return SLIDE_FORMATS;
-    case 'pdf': return DOC_FORMATS.filter((f) => f.id !== 'pdf').map((f) => ({ ...f, label: `${f.label} (solo el texto)` }));
     default: return [];
   }
 }
@@ -36,6 +45,18 @@ export function formatsFor(kind: Kind): Fmt[] {
 /** Convierte un archivo a otro formato dentro del navegador. */
 export async function convertFile(src: Blob, name: string, mime: string, fmt: string, onProgress?: (p: number, m: string) => void): Promise<Blob> {
   const kind = kindOf(name, mime);
+  if (fmt === 'pptx-any' || fmt === 'pdf-any' || fmt === 'png-zip') {
+    const a = await import('@/lib/convert/any');
+    if (fmt === 'pptx-any') return a.anyToPptx(src, name, kind, onProgress);
+    if (fmt === 'pdf-any') return a.anyToPdf(src, name, kind);
+    return a.anyToImagesZip(src, name, kind);
+  }
+  if (kind === 'slides' && fmt === 'docx') {
+    const s = await import('@/lib/office/deck'); const d = await import('@/lib/convert/docs');
+    const deck = await s.readPptx(src);
+    const html = deck.pages.map((p, i) => `<h2>Diapositiva ${i + 1}</h2>${p.els.map((e: any) => (e.text ? `<p>${String(e.text).replace(/[<>&]/g, '')}</p>` : '')).join('')}`).join('');
+    return d.exportDocument(html, baseName(name), 'docx');
+  }
   if (kind === 'video' || kind === 'audio') return convertMedia(src, name, fmt, onProgress);
   if (kind === 'image') return convertImage(src, fmt);
   onProgress?.(0.3, 'Convirtiendo…');

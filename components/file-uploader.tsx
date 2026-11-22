@@ -1,6 +1,8 @@
 'use client';
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { FileAccessFields } from '@/components/file-access-form';
+import type { PickOpt } from '@/components/people-picker';
 import { FILE_ACCEPT, FILE_MAX, FILE_MAX_LABEL, FILE_TYPES, fmtSize } from '@/lib/user-files';
 
 type Opt = { value: string; label: string };
@@ -46,8 +48,8 @@ export function putWithProgress(path: string, token: string, file: Blob, mime: s
 }
 
 /** Sube fotos, videos y documentos directo al almacenamiento privado (sin pasar por el servidor). */
-export async function uploadUserFile(org: string, original: File, opts: { visibility?: string; section?: string; description?: string; folder?: string } = {},
-  onProgress?: (pct: number) => void) {
+export async function uploadUserFile(org: string, original: File, opts: { visibility?: string; section?: string; description?: string; folder?: string; users?: string[]; groups?: string[]; emails?: string } = {},
+  onProgress?: (pct: number) => void, onNotes?: (notes: string[]) => void) {
   const file = await shrinkPhoto(original);
   const mime = guessMime(file);
   if (!FILE_TYPES[mime]) throw new Error(`«${file.name}»: tipo de archivo no permitido.`);
@@ -58,35 +60,42 @@ export async function uploadUserFile(org: string, original: File, opts: { visibi
   const r2 = await fetch('/api/archivos/registrar', { method: 'POST', headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ org, path: j1.path, name: file.name, size: file.size, mime, ...opts }) });
   const j2 = await r2.json(); if (!r2.ok) throw new Error(j2.error);
+  if (j2.notes?.length) onNotes?.(j2.notes);
   return j2.id as string;
 }
 
-export function FileUploader({ org, sections, folder, folderName }: { org: string; sections: Opt[]; folder?: string; folderName?: string }) {
+export function FileUploader({ org, sections, folder, folderName, people = [], groups = [] }: {
+  org: string; sections: Opt[]; folder?: string; folderName?: string; people?: PickOpt[]; groups?: { id: string; name: string; count: number }[];
+}) {
   const router = useRouter();
   const input = useRef<HTMLInputElement>(null);
-  const [vis, setVis] = useState('private');
-  const [section, setSection] = useState(sections[0]?.value ?? '');
-  const [desc, setDesc] = useState('');
+  const form = useRef<HTMLFormElement>(null);
   const [busy, setBusy] = useState(false);
   const [log, setLog] = useState<{ ok: boolean; text: string }[]>([]);
 
   const send = async () => {
     const files = [...(input.current?.files ?? [])];
     if (!files.length) { setLog([{ ok: false, text: 'Elija uno o más archivos.' }]); return; }
+    const fd = new FormData(form.current!);
+    const opts = {
+      visibility: String(fd.get('visibility') ?? 'private'), section: String(fd.get('section') ?? '') || undefined,
+      description: String(fd.get('description') ?? ''), folder, users: fd.getAll('users').map(String), groups: fd.getAll('groups').map(String),
+      emails: String(fd.get('emails') ?? ''),
+    };
     setBusy(true); setLog([]);
     const out: { ok: boolean; text: string }[] = [];
     for (const f of files) {
       setLog([...out, { ok: true, text: `Subiendo «${f.name}» (${fmtSize(f.size)})…` }]);
       try {
-        await uploadUserFile(org, f, { visibility: vis, section: vis === 'section' ? section : undefined, description: desc, folder },
-          (pct) => setLog([...out, { ok: true, text: `Subiendo «${f.name}» (${fmtSize(f.size)})… ${pct} %` }]));
+        await uploadUserFile(org, f, opts, (pct) => setLog([...out, { ok: true, text: `Subiendo «${f.name}» (${fmtSize(f.size)})… ${pct} %` }]),
+          (notes) => notes.forEach((n) => out.push({ ok: !/^No se pudo|Falta/.test(n), text: `   ${n}` })));
+        out.splice(out.length, 0);
         out.push({ ok: true, text: `✓ «${f.name}» guardado` });
       }
       catch (e) { out.push({ ok: false, text: `✕ ${(e as Error).message}` }); }
     }
     setLog(out); setBusy(false);
     if (input.current) input.current.value = '';
-    setDesc('');
     router.refresh();
     window.dispatchEvent(new CustomEvent('sematec:changed'));
   };
@@ -96,20 +105,13 @@ export function FileUploader({ org, sections, folder, folderName }: { org: strin
       {folderName && <p className="rounded-lg bg-amber-50 px-3 py-2 text-sm text-amber-900">📂 Se guardarán en la carpeta <b>{folderName}</b></p>}
       <label className="block"><span className="label">Fotos, videos, audio o documentos (máx. {FILE_MAX_LABEL} c/u; las fotos grandes se achican solas)</span>
         <input ref={input} type="file" multiple accept={FILE_ACCEPT} className="block w-full text-sm" /></label>
-      <div className="grid gap-3 sm:grid-cols-2">
-        <label className="block"><span className="label">¿Quién lo puede ver?</span>
-          <select className="input" name="visibility" value={vis} onChange={(e) => setVis(e.target.value)}>
-            <option value="private">Solo yo</option>
-            {sections.length > 0 && <option value="section">Mi curso (profesor y estudiantes)</option>}
-            <option value="staff">Personal y profesores de la institución</option>
-            <option value="org">Toda la institución</option>
-          </select></label>
-        {vis === 'section' && <label className="block"><span className="label">Curso</span>
-          <select className="input" name="section" value={section} onChange={(e) => setSection(e.target.value)}>
-            {sections.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}</select></label>}
-      </div>
-      <label className="block"><span className="label">Descripción (opcional)</span>
-        <input className="input" name="description" value={desc} onChange={(e) => setDesc(e.target.value)} maxLength={500} /></label>
+      <form ref={form} onSubmit={(e) => e.preventDefault()} className="space-y-3">
+        <FileAccessFields people={people} groups={groups} sections={sections} />
+        <label className="block"><span className="label">✉ Enviar también a personas nuevas, sin cuenta (opcional)</span>
+          <input className="input" name="emails" placeholder="persona@correo.com, otra@correo.com" data-testid="correos-subida" /></label>
+        <label className="block"><span className="label">Descripción (opcional)</span>
+          <input className="input" name="description" maxLength={500} /></label>
+      </form>
       <button type="button" className="btn-primary" disabled={busy} onClick={send}>{busy ? 'Subiendo…' : '⬆ Subir archivos'}</button>
       {log.length > 0 && <ul role="status" className="space-y-1 text-sm">{log.map((l, i) => <li key={i} className={l.ok ? 'text-emerald-800' : 'text-red-700'}>{l.text}</li>)}</ul>}
     </div>

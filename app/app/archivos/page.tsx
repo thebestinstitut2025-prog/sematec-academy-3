@@ -5,15 +5,19 @@ import { ActionForm } from '@/components/forms';
 import { FileUploader } from '@/components/file-uploader';
 import { fmtDateTime } from '@/lib/format';
 import { fileKind, fmtSize } from '@/lib/user-files';
-import { deleteFile, restoreFile, purgeFile, createFolder, renameFolder, deleteFolder, moveFile, renameFile } from './actions';
+import { deleteFile, restoreFile, purgeFile, createFolder, renameFolder, deleteFolder, moveFile, renameFile, addLink, saveGroup, deleteGroup } from './actions';
+import { sharingOptions } from '@/lib/file-people';
+import { FileAccessFields } from '@/components/file-access-form';
+import { PeoplePicker } from '@/components/people-picker';
+import { VIS_LABEL } from '@/lib/file-share';
 import Link from 'next/link';
 import { idsOrNone, myTeachingSectionIds } from '@/lib/teaching';
 
 
 export const dynamic = 'force-dynamic';
 
-const VIS: Record<string, string> = { private: '🔒 Solo yo', section: '👥 Curso', staff: '🏢 Personal', org: '🌐 Institución' };
-type F = { id: string; name: string; description: string | null; mime_type: string; size_bytes: number; visibility: string; created_at: string;
+const VIS: Record<string, string> = VIS_LABEL;
+type F = { id: string; url?: string | null; name: string; description: string | null; mime_type: string; size_bytes: number; visibility: string; created_at: string;
   deleted_at: string | null; owner_id: string; deleted_by: string | null; folder_id: string | null; owner: { full_name: string } | null; remover: { full_name: string } | null;
   sections: { code: string; courses: { name: string } | null } | null };
 
@@ -26,7 +30,7 @@ export default async function ArchivosPage({ searchParams }: { searchParams: Pro
   const qtext = rawQ.trim().slice(0, 200);
   const ctx = await getContext();
   const orgId = requireOrg(ctx);
-  const sel = 'id, name, description, mime_type, size_bytes, visibility, created_at, deleted_at, owner_id, deleted_by, folder_id, owner:profiles!user_files_owner_id_fkey(full_name), remover:profiles!user_files_deleted_by_fkey(full_name), sections(code, courses(name))';
+  const sel = 'id, url, name, description, mime_type, size_bytes, visibility, created_at, deleted_at, owner_id, deleted_by, folder_id, owner:profiles!user_files_owner_id_fkey(full_name), remover:profiles!user_files_deleted_by_fkey(full_name), sections(code, courses(name))';
   // 📂 Carpetas propias (para «Mis archivos»)
   const { data: fdata } = await ctx.supabase.from('file_folders').select('id, name, parent_id, color').eq('owner_id', ctx.user.id).order('name');
   const folders = (fdata ?? []) as Folder[];
@@ -44,23 +48,26 @@ export default async function ArchivosPage({ searchParams }: { searchParams: Pro
   else if (t === 'todos' && ctx.isOwner) q = q.is('deleted_at', null);
   const { data, error } = await q;
   const files = (data ?? []) as unknown as F[];
-  // Cursos del usuario (para compartir con su curso)
-  const secs: { value: string; label: string }[] = [];
-  if (ctx.teacherId) {
-    const { data: s } = await ctx.supabase.from('sections').select('id, code, courses(name)').in('id', idsOrNone(await myTeachingSectionIds(ctx))).eq('status', 'active');
-    for (const x of (s ?? []) as any[]) secs.push({ value: x.id, label: `${x.courses?.name ?? ''} (${x.code})` });
-  }
-  if (ctx.studentId) {
-    const { data: s } = await ctx.supabase.from('section_enrollments').select('sections(id, code, courses(name))').eq('student_id', ctx.studentId).neq('status', 'dropped');
-    for (const x of (s ?? []) as any[]) if (x.sections) secs.push({ value: x.sections.id, label: `${x.sections.courses?.name ?? ''} (${x.sections.code})` });
-  }
-  const tabs = [['mios', 'Mis archivos'], ['compartidos', 'Compartidos conmigo'], ...(ctx.isOwner ? [['todos', 'Todos'], ['eliminados', '🗂 Historial de eliminados']] : [])]
+  // 👤 Con quién puede compartir: personas, sus grupos y sus cursos
+  const share = await sharingOptions(ctx);
+  const secs = share.sections;
+  const tabs = [['mios', 'Mis archivos'], ['compartidos', 'Compartidos conmigo'], ['grupos', '👥 Mis grupos'], ...(ctx.isOwner ? [['todos', 'Todos'], ['eliminados', '🗂 Historial de eliminados']] : [])]
     .map(([key, label]) => ({ key, label, href: `/app/archivos?t=${key}` }));
 
   return (
     <div>
       <PageHeader title="📁 Archivos" subtitle="Suba fotos, videos, audio y documentos. Quedan guardados en el almacenamiento privado de la institución." />
-      <Card title={cur ? `Subir archivos a «${cur.name}»` : 'Subir archivos'} className="mb-6"><FileUploader org={orgId} sections={secs} folder={t === 'mios' ? cur?.id : undefined} folderName={t === 'mios' ? cur?.name : undefined} /></Card>
+      <div className="mb-6 grid gap-6 xl:grid-cols-[1.4fr_1fr]">
+        <Card title={cur ? `⬆ Subir archivos a «${cur.name}»` : '⬆ Subir archivos'}><FileUploader org={orgId} sections={secs} people={share.people} groups={share.groups} folder={t === 'mios' ? cur?.id : undefined} folderName={t === 'mios' ? cur?.name : undefined} /></Card>
+        <Card title="🔗 Subir un enlace (YouTube, Drive, cualquier página)">
+          <ActionForm action={addLink} submitLabel="Guardar enlace">
+            {t === 'mios' && cur && <input type="hidden" name="folder" value={cur.id} />}
+            <label className="block"><span className="label">Enlace</span><input name="url" required className="input" placeholder="https://www.youtube.com/watch?v=…" data-testid="url-enlace" /></label>
+            <label className="block"><span className="label">Nombre</span><input name="name" maxLength={200} className="input" placeholder="Ej.: Clase 3 en video" /></label>
+            <FileAccessFields people={share.people} groups={share.groups} sections={secs} />
+          </ActionForm>
+        </Card>
+      </div>
       <Tabs items={tabs} current={t} />
       <form className="mb-4 flex flex-wrap items-end gap-2" method="get" data-testid="buscar-archivos">
         <input type="hidden" name="t" value={t} />{cur && <input type="hidden" name="c" value={cur.id} />}
@@ -94,12 +101,37 @@ export default async function ArchivosPage({ searchParams }: { searchParams: Pro
               </ActionForm></details>
           </div>
         </div>)}
+      {t === 'grupos' && (
+        <div className="mb-6 grid gap-6 xl:grid-cols-2" data-testid="grupos">
+          <Card title="➕ Nuevo grupo">
+            <p className="mb-3 text-sm text-slate-600">Arme grupos (por ejemplo «4° medio A», «Apoderados», «Equipo de matemática») y compártales archivos con un clic.</p>
+            <ActionForm action={saveGroup} submitLabel="Crear grupo">
+              <label className="block"><span className="label">Nombre del grupo</span><input name="name" required maxLength={80} className="input" data-testid="nombre-grupo" /></label>
+              <PeoplePicker name="members" options={share.people} label="Integrantes" testid="integrantes" />
+            </ActionForm>
+          </Card>
+          <Card title={`👥 Mis grupos (${share.groups.length})`}>
+            {share.groups.length ? <ul className="divide-y divide-slate-100">{share.groups.map((g) => (
+              <li key={g.id} className="py-3 text-sm" data-testid="grupo">
+                <div className="flex items-center justify-between gap-2"><b>{g.name}</b><span className="text-xs text-slate-500">{g.count} persona(s)</span></div>
+                <details className="mt-1"><summary className="link cursor-pointer text-xs">✏ Editar integrantes o nombre</summary>
+                  <ActionForm action={saveGroup} submitLabel="Guardar" resetOnSuccess={false}>
+                    <input type="hidden" name="group_id" value={g.id} />
+                    <input name="name" required defaultValue={g.name} maxLength={80} className="input" aria-label="Nombre del grupo" />
+                    <PeoplePicker name="members" options={share.people} initial={g.members} />
+                  </ActionForm></details>
+                <ActionForm action={deleteGroup} inline submitLabel="🗑 Eliminar grupo" submitClass="mt-1 text-xs text-red-600 hover:underline" confirm={`¿Eliminar el grupo «${g.name}»?`}><input type="hidden" name="group_id" value={g.id} /></ActionForm>
+              </li>))}</ul> : <Empty>Aún no tiene grupos.</Empty>}
+          </Card>
+        </div>)}
       {t === 'eliminados' && <p className="mb-4 rounded-lg bg-slate-50 p-3 text-sm text-slate-700">Aquí está todo lo que los usuarios eliminaron. Puede <b>restaurarlo</b> (vuelve a su dueño) o <b>eliminarlo definitivamente</b> (se borra el archivo; queda solo el registro en la Auditoría).</p>}
-      {error ? <Card><p className="text-sm text-red-700">{error.message}</p></Card> : files.length ? (
+      {t === 'grupos' ? null : error ? <Card><p className="text-sm text-red-700">{error.message}</p></Card> : files.length ? (
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {files.map((f) => (
             <div key={f.id} className="card overflow-hidden" data-testid="archivo">
-              {f.mime_type.startsWith('image/') && !f.deleted_at ? (
+              {f.url ? (
+                <a href={`/app/archivos/abrir/${f.id}`} className="flex h-24 flex-col items-center justify-center bg-slate-50 text-sm text-slate-600"><span className="text-4xl">{/youtu/.test(f.url) ? '▶️' : '🔗'}</span>{(() => { try { return new URL(f.url).hostname; } catch { return ''; } })()}</a>
+              ) : f.mime_type.startsWith('image/') && !f.deleted_at ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <a href={`/app/archivos/ver/${f.id}`} target="_blank" rel="noopener noreferrer"><img src={`/app/archivos/ver/${f.id}`} alt={f.name} className="h-40 w-full bg-slate-100 object-cover" loading="lazy" /></a>
               ) : f.mime_type.startsWith('video/') && !f.deleted_at ? (
@@ -113,7 +145,8 @@ export default async function ArchivosPage({ searchParams }: { searchParams: Pro
                 <p className="flex flex-wrap gap-1"><Badge color="blue">{VIS[f.visibility]}{f.sections ? ` ${f.sections.courses?.name ?? ''}` : ''}</Badge>
                   {f.deleted_at && <Badge color="red">Eliminado {fmtDateTime(f.deleted_at)}{f.remover ? ` por ${f.remover.full_name}` : ''}</Badge>}</p>
                 <div className="flex flex-wrap gap-1 pt-2">
-                  <DownloadMenu href={`/app/archivos/ver/${f.id}?descargar=1`} name={f.name} mime={f.mime_type} fileId={f.deleted_at ? undefined : f.id} />
+                  {!f.deleted_at && <Link className="btn-primary btn-sm" href={`/app/archivos/abrir/${f.id}`} data-testid="abrir-archivo">👁 Abrir{f.owner_id === ctx.user.id ? ' y compartir' : ''}</Link>}
+                  {f.url ? null : <DownloadMenu href={`/app/archivos/ver/${f.id}?descargar=1`} name={f.name} mime={f.mime_type} fileId={f.deleted_at ? undefined : f.id} />}
                   {!f.deleted_at && f.owner_id === ctx.user.id && (
                     <details className="w-full text-xs"><summary className="cursor-pointer text-slate-500" data-testid="opciones-archivo">📂 Mover o renombrar</summary>
                       <ActionForm action={moveFile} inline submitLabel="Mover" submitClass="btn-secondary btn-sm" resetOnSuccess={false}>
