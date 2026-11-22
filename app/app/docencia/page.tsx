@@ -1,3 +1,4 @@
+import { idsOrNone, myTeachingSectionIds } from '@/lib/teaching';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { getContext } from '@/lib/context';
@@ -10,7 +11,7 @@ export default async function Page() {
   if (!ctx.teacherId) notFound();
   const { data } = await ctx.supabase.from('sections')
     .select('id, code, grades_closed_at, courses(code, name), academic_periods(code, status), campuses(name)')
-    .eq('teacher_id', ctx.teacherId).order('created_at', { ascending: false });
+    .in('id', idsOrNone(await myTeachingSectionIds(ctx))).order('created_at', { ascending: false });
   return (
     <>
       <PageHeader title="Mis secciones" subtitle="Libro de clases, asistencia, evaluaciones y actas" />

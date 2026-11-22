@@ -1,3 +1,4 @@
+import { idsOrNone, myTeachingSectionIds } from '@/lib/teaching';
 import 'server-only';
 import { notFound } from 'next/navigation';
 import { can, type Ctx } from '@/lib/context';
@@ -7,7 +8,7 @@ export async function loadSection(ctx: Ctx, id: string) {
   const { data: s } = await ctx.supabase.from('sections')
     .select('id, code, room_code, organization_id, teacher_id, course_id, period_id, capacity, courses(code, name), academic_periods(name), teachers(first_names, last_names)').eq('id', id).maybeSingle();
   if (!s) notFound();
-  const manager = (!!ctx.teacherId && s.teacher_id === ctx.teacherId) || can(ctx, 'sections.edit');
+  const manager = (!!ctx.teacherId && (s.teacher_id === ctx.teacherId || (await myTeachingSectionIds(ctx)).includes(s.id))) || can(ctx, 'sections.edit');
   const { data: enr } = ctx.studentId
     ? await ctx.supabase.from('section_enrollments').select('id').eq('section_id', id).eq('student_id', ctx.studentId).neq('status', 'dropped').maybeSingle()
     : { data: null };

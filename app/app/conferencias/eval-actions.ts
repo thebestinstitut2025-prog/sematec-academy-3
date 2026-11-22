@@ -1,4 +1,5 @@
 'use server';
+import { idsOrNone, myTeachingSectionIds } from '@/lib/teaching';
 import { revalidatePath } from 'next/cache';
 import { can, getContext } from '@/lib/context';
 
@@ -23,7 +24,7 @@ async function sectionOf(session: string) {
   if (!sectionId) return { ctx, sectionId: null, sec: null, manager: false };
   const { data: sec } = await ctx.supabase.from('sections')
     .select('id, teacher_id, grades_closed_at, courses(name), grade_scales(min_grade, max_grade, passing_grade, decimals)').eq('id', sectionId).maybeSingle();
-  const manager = !!sec && ((!!ctx.teacherId && sec.teacher_id === ctx.teacherId) || can(ctx, 'grades.edit') || can(ctx, 'sections.edit'));
+  const manager = !!sec && ((!!ctx.teacherId && (sec.teacher_id === ctx.teacherId || (await myTeachingSectionIds(ctx)).includes(sec.id))) || can(ctx, 'grades.edit') || can(ctx, 'sections.edit'));
   return { ctx, sectionId, sec, manager };
 }
 

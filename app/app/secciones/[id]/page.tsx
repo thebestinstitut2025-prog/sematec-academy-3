@@ -1,3 +1,4 @@
+import { idsOrNone, myTeachingSectionIds } from '@/lib/teaching';
 import { notFound } from 'next/navigation';
 import QRCode from 'qrcode';
 import { OwnerActions } from '@/components/owner-actions';
@@ -12,8 +13,10 @@ import { WEEKDAYS, fmtDateTime, fmtNum, fullName, label, tzOffset, fmtSlot } fro
 import {
   addSchedule, removeSchedule, registerStudent, dropStudent, createClassSession, saveAttendance,
   createAssessment, togglePublish, saveGrades, closeActa, amendGrade, updateSection,
-  openCheckin, closeCheckin, teacherMark, attendanceFromVirtual, newRoomCode,
+  openCheckin, closeCheckin, teacherMark, attendanceFromVirtual, newRoomCode, addSectionTeacher, removeSectionTeacher,
 } from '../actions';
+import { PeoplePicker } from '@/components/people-picker';
+import { TEACHER_ROLES } from '@/lib/teaching';
 
 const TSTATUS: Record<string, [string, 'gray' | 'green' | 'red' | 'amber']> = {
   pending: ['Por dictar', 'gray'], held: ['Dictada', 'green'], cancelled: ['Suspendida', 'red'], rescheduled: ['Reprogramada', 'amber'],
@@ -28,7 +31,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
     .select('*, courses(code, name), academic_periods(id, code, name), campuses(name, timezone), teachers(id, first_names, last_names), grade_scales(*)')
     .eq('id', id).maybeSingle();
   if (!s) notFound();
-  const isTeacher = !!ctx.teacherId && s.teacher_id === ctx.teacherId;
+  const isTeacher = !!ctx.teacherId && (s.teacher_id === ctx.teacherId || (await myTeachingSectionIds(ctx)).includes(s.id));
   if (!isTeacher && !can(ctx, 'sections.view') && !can(ctx, 'grades.view')) notFound();
   const closed = !!s.grades_closed_at;
   const tz: string = s.campuses?.timezone ?? 'America/Santiago';
@@ -60,13 +63,16 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   );
 
   async function Resumen() {
-    const [{ data: sched }, rooms, teachers, { data: candidates }] = await Promise.all([
+    const [{ data: sched }, rooms, teachers, { data: candidates }, { data: staffT }] = await Promise.all([
       sb.from('section_schedules').select('id, weekday, time_slot, rooms(code, name)').eq('section_id', id).order('weekday'),
       roomOptions(ctx), teacherOptions(ctx),
       can(ctx, 'enrollments.create')
         ? sb.from('enrollments').select('student_id, students(first_names, last_names, student_code)').eq('period_id', s.period_id).eq('status', 'active')
         : Promise.resolve({ data: [] as any[] }),
+      sb.rpc('section_teacher_list', { p_section: id }),
     ]);
+    const teamList = (staffT ?? []) as { teacher_id: string; full_name: string; email: string; role: string }[];
+    const inTeam = new Set(teamList.map((x) => x.teacher_id));
     const enrolledIds = new Set(students.map((x: any) => x.id));
     const options = (candidates ?? []).filter((c: any) => !enrolledIds.has(c.student_id))
       .map((c: any) => ({ value: c.student_id, label: `${c.students.last_names}, ${c.students.first_names} (${c.students.student_code})` }));
@@ -90,6 +96,22 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           )}
         </Card>
         <div className="space-y-6">
+          <Card title={`👩‍🏫 Profesores de la sección (${teamList.length || (s.teacher_id ? 1 : 0)})`}>
+            {teamList.length ? <ul className="mb-3 divide-y divide-slate-100 text-sm" data-testid="equipo-docente">{teamList.map((x) => (
+              <li key={x.teacher_id} className="flex flex-wrap items-center justify-between gap-2 py-2">
+                <span><b>{x.full_name}</b> <Badge color={x.role === 'titular' ? 'green' : x.role === 'coprofesor' ? 'blue' : 'gray'}>{TEACHER_ROLES[x.role] ?? x.role}</Badge><span className="block text-xs text-slate-500">{x.email}</span></span>
+                {x.role !== 'titular' && can(ctx, 'sections.edit') && <ActionForm action={removeSectionTeacher} inline submitLabel="Quitar" submitClass="btn-secondary btn-sm" confirm={`¿Quitar a ${x.full_name} de esta sección?`}>
+                  <input type="hidden" name="section_id" value={id} /><input type="hidden" name="teacher_id" value={x.teacher_id} /></ActionForm>}
+              </li>))}</ul> : <Empty>{s.teachers ? `Titular: ${fullName(s.teachers)}` : 'Sin profesores asignados.'}</Empty>}
+            {can(ctx, 'sections.edit') && (
+              <details className="rounded-lg border border-slate-200 p-3" data-testid="agregar-profesores"><summary className="cursor-pointer font-semibold text-brand-700">➕ Agregar profesores (los que quiera)</summary>
+                <ActionForm action={addSectionTeacher} submitLabel="Agregar a la sección">
+                  <input type="hidden" name="section_id" value={id} />
+                  <PeoplePicker name="teacher_id" options={teachers.filter((t) => !inTeam.has(t.value) && t.value !== s.teacher_id)} />
+                  <SelectField label="Como" name="role" defaultValue="coprofesor" options={[{ value: 'coprofesor', label: 'Co-profesor (mismos permisos que el titular)' }, { value: 'ayudante', label: 'Ayudante' }]} />
+                  <p className="text-xs text-slate-500">Todos manejan el aula, las notas, la asistencia y las clases de esta sección. El titular se cambia en «Datos de la sección».</p>
+                </ActionForm></details>)}
+          </Card>
           <Card title="Horario">
             {sched?.length ? <ul className="mb-4 divide-y divide-slate-100 text-sm">{sched.map((h: any) => (
               <li key={h.id} className="flex items-center justify-between py-2">
@@ -111,7 +133,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
               <ActionForm action={updateSection} submitLabel="Guardar" resetOnSuccess={false}>
                 <input type="hidden" name="id" value={id} />
                 <Grid cols={3}>
-                  <SelectField label="Profesor" name="teacher_id" options={teachers} defaultValue={s.teacher_id} placeholder="Sin asignar" />
+                  <SelectField label="Profesor titular" name="teacher_id" options={teachers} defaultValue={s.teacher_id} placeholder="Sin asignar" />
                   <Field label="Cupos" name="capacity" type="number" min={1} defaultValue={s.capacity} required />
                   <Field label="Asistencia mínima %" name="min_attendance_pct" type="number" min={0} max={100} defaultValue={s.min_attendance_pct} required />
                 </Grid>

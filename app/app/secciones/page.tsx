@@ -5,7 +5,8 @@ import { PageHeader, Card, Empty } from '@/components/ui';
 import { ActionForm, Field, Grid, SelectField } from '@/components/forms';
 import { campusOptions, courseOptions, gradeScaleOptions, periodOptions, teacherOptions } from '@/lib/options';
 import { WEEKDAYS, fmtSlot } from '@/lib/format';
-import { createSection } from './actions';
+import { addCourseTeacher, createSection } from './actions';
+import { PeoplePicker } from '@/components/people-picker';
 
 export const metadata = { title: 'Secciones' };
 
@@ -22,6 +23,22 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ p
   return (
     <>
       <PageHeader title="Secciones" subtitle="Cursos dictados por periodo: horarios, inscritos, asistencia y notas" />
+      {can(ctx, 'sections.edit') && (
+        <details className="card mb-6" data-testid="profesores-asignatura">
+          <summary className="cursor-pointer px-5 py-3 text-sm font-bold text-brand-700">👩‍🏫 Agregar profesores a una asignatura completa</summary>
+          <div className="border-t border-slate-100 p-5">
+            <p className="mb-3 text-sm text-slate-600">Agrega los profesores elegidos (los que quiera) a <b>todas las secciones activas</b> de la asignatura. En cada sección puede agregar o quitar profesores por separado.</p>
+            <ActionForm action={addCourseTeacher} submitLabel="Agregar a la asignatura">
+              <Grid cols={3}>
+                <SelectField label="Asignatura" name="course_id" required options={courses} />
+                <SelectField label="Solo en el periodo" name="period_id" options={periods} placeholder="Todos los periodos" />
+                <SelectField label="Como" name="role" defaultValue="coprofesor" options={[{ value: 'coprofesor', label: 'Co-profesor' }, { value: 'ayudante', label: 'Ayudante' }]} />
+              </Grid>
+              <PeoplePicker name="teacher_id" options={teachers} label="Profesores" />
+            </ActionForm>
+          </div>
+        </details>
+      )}
       {can(ctx, 'sections.create') && (
         <details className="card mb-6">
           <summary className="cursor-pointer px-5 py-3 text-sm font-bold text-brand-700">+ Nueva sección (sala)</summary>

@@ -239,3 +239,51 @@ export async function newRoomCode(fd: FormData): Promise<ActionResult> {
     return ok(`Nuevo código de sala: ${data}`);
   });
 }
+
+// ---------- 👩‍🏫 Varios profesores por sección y asignatura ----------
+const FIX_TEACHERS = 'Falta instalar la actualización «Varios profesores» en Actualizar base de datos.';
+export async function addSectionTeacher(fd: FormData): Promise<ActionResult> {
+  return guard(async () => {
+    const ctx = await getContext();
+    const section = reqStr(fd, 'section_id', 'Sección');
+    const ids = fd.getAll('teacher_id').map(String).filter(Boolean);
+    if (!ids.length) return fail('Elija al menos un profesor.');
+    const role = str(fd, 'role') === 'ayudante' ? 'ayudante' : 'coprofesor';
+    for (const t of ids.slice(0, 50)) {
+      const { error } = await ctx.supabase.rpc('add_section_teacher', { p_section: section, p_teacher: t, p_role: role });
+      if (error) return fail(/add_section_teacher/.test(error.message) ? FIX_TEACHERS : error);
+    }
+    revalidatePath(`/app/secciones/${section}`); revalidatePath(`/app/aula/${section}`);
+    return ok(`${ids.length} profesor(es) agregado(s) como ${role === 'ayudante' ? 'ayudante' : 'co-profesor'}.`);
+  });
+}
+
+export async function removeSectionTeacher(fd: FormData): Promise<ActionResult> {
+  return guard(async () => {
+    const ctx = await getContext();
+    const section = reqStr(fd, 'section_id', 'Sección');
+    const { error } = await ctx.supabase.rpc('remove_section_teacher', { p_section: section, p_teacher: reqStr(fd, 'teacher_id', 'Profesor') });
+    if (error) return fail(error);
+    revalidatePath(`/app/secciones/${section}`); revalidatePath(`/app/aula/${section}`);
+    return ok('Profesor quitado de la sección.');
+  });
+}
+
+export async function addCourseTeacher(fd: FormData): Promise<ActionResult> {
+  return guard(async () => {
+    const ctx = await getContext();
+    const course = reqStr(fd, 'course_id', 'Asignatura');
+    const ids = fd.getAll('teacher_id').map(String).filter(Boolean);
+    if (!ids.length) return fail('Elija al menos un profesor.');
+    const role = str(fd, 'role') === 'ayudante' ? 'ayudante' : 'coprofesor';
+    let n = 0;
+    for (const t of ids.slice(0, 50)) {
+      const { data, error } = await ctx.supabase.rpc('add_course_teacher', { p_course: course, p_teacher: t, p_role: role, p_period: str(fd, 'period_id') });
+      if (error) return fail(/add_course_teacher/.test(error.message) ? FIX_TEACHERS : error);
+      n += Number(data ?? 0);
+    }
+    revalidatePath('/app/secciones');
+    return n ? ok(`Listo: ${ids.length} profesor(es) agregado(s) a las secciones activas de la asignatura (${n} asignación(es)).`)
+      : fail('La asignatura no tiene secciones activas (o el profesor ya es titular de todas).');
+  });
+}

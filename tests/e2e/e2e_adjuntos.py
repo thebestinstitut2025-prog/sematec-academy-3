@@ -59,7 +59,7 @@ def main():
         box.locator('button:has-text("Entregar archivos")').click(); m = status_msg(p)
         check('entregado' in m and att('external_eval') == 1, 'Evaluación: archivo entregado al profesor')
         # Examen
-        go(p, f'{BASE}/app/aula/{A}/examen/{qid}/rendir'); p.click('button:has-text("Comenzar")'); p.wait_for_selector('text=¿2+2=4?', timeout=20000)
+        go(p, f'{BASE}/app/aula/{A}/examen/{qid}/rendir'); p.click('[data-testid=comenzar-prueba]'); p.wait_for_selector('text=¿2+2=4?', timeout=20000)
         p.locator('label:has-text("Verdadero")').click()
         check(upload(p.locator('.card', has=p.locator('[data-testid=adjuntar]')), ['desarrollo-examen.pdf']), 'Examen: adjunta su desarrollo')
         p.click('button:has-text("Enviar examen")'); p.wait_for_selector('text=Examen enviado', timeout=20000)

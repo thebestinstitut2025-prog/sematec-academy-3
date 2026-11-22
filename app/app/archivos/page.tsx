@@ -7,6 +7,8 @@ import { fmtDateTime } from '@/lib/format';
 import { fileKind, fmtSize } from '@/lib/user-files';
 import { deleteFile, restoreFile, purgeFile, createFolder, renameFolder, deleteFolder, moveFile, renameFile } from './actions';
 import Link from 'next/link';
+import { idsOrNone, myTeachingSectionIds } from '@/lib/teaching';
+
 
 export const dynamic = 'force-dynamic';
 
@@ -45,7 +47,7 @@ export default async function ArchivosPage({ searchParams }: { searchParams: Pro
   // Cursos del usuario (para compartir con su curso)
   const secs: { value: string; label: string }[] = [];
   if (ctx.teacherId) {
-    const { data: s } = await ctx.supabase.from('sections').select('id, code, courses(name)').eq('teacher_id', ctx.teacherId).eq('status', 'active');
+    const { data: s } = await ctx.supabase.from('sections').select('id, code, courses(name)').in('id', idsOrNone(await myTeachingSectionIds(ctx))).eq('status', 'active');
     for (const x of (s ?? []) as any[]) secs.push({ value: x.id, label: `${x.courses?.name ?? ''} (${x.code})` });
   }
   if (ctx.studentId) {

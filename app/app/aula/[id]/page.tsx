@@ -38,6 +38,12 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const { data: look } = await ctx.supabase.from('sections').select('card_color, card_image, courses(card_color, card_image)').eq('id', id).maybeSingle() as { data: any };
   const pick = pickCard(look, look?.courses);
   const banner = cardStyle(pick.color, pick.image);
+  // 👩‍🏫 Todos los profesores de la sala (titular, co-profesores y ayudantes)
+  const { data: teamData } = await ctx.supabase.rpc('section_teacher_list', { p_section: id });
+  const team = (teamData ?? []) as { full_name: string; role: string }[];
+  const teamText = team.length ? team.map((x) => `${x.full_name}${x.role === 'titular' ? '' : x.role === 'ayudante' ? ' (ayudante)' : ' (co-profesor)'}`).join(', ')
+    : s.teachers ? `${s.teachers.first_names} ${s.teachers.last_names}` : '';
+  const teamLabel = team.length > 1 ? 'Profesores' : 'Profesor';
   const base = `/app/aula/${id}`;
   const { data: assessments } = manager ? await ctx.supabase.from('assessments').select('id, name, weight_pct').eq('section_id', id) : { data: [] as any[] };
   const assessOpts = (assessments ?? []).map((a: any) => ({ value: a.id, label: `${a.name} (${a.weight_pct}%)` }));
@@ -459,9 +465,9 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         <div className={`mb-4 rounded-2xl p-5 shadow-sm sm:p-6 ${banner.light ? 'text-white' : ''}`} style={banner.style} data-testid="portada-curso">
           <p className={`text-xs font-bold ${banner.light ? 'text-white/85' : 'text-brand-700'}`}>{s.courses?.code} · Sala {s.code} · {s.academic_periods?.name ?? ''}</p>
           <h1 className="mt-1 text-2xl font-bold sm:text-3xl">{s.courses?.name ?? 'Curso'}</h1>
-          {s.teachers && <p className={`mt-1 text-sm ${banner.light ? 'text-white/85' : 'text-slate-600'}`}>Profesor: {s.teachers.first_names} {s.teachers.last_names}</p>}
+          {teamText && <p className={`mt-1 text-sm ${banner.light ? 'text-white/85' : 'text-slate-600'}`} data-testid="profesores-sala">{teamLabel}: {teamText}</p>}
         </div>
-      ) : <PageHeader title={s.courses?.name ?? 'Curso'} subtitle={`${s.courses?.code ?? ''} · Sala ${s.code} · ${s.academic_periods?.name ?? ''}${s.teachers ? ` · Profesor: ${s.teachers.first_names} ${s.teachers.last_names}` : ''}`} />}
+      ) : <PageHeader title={s.courses?.name ?? 'Curso'} subtitle={`${s.courses?.code ?? ''} · Sala ${s.code} · ${s.academic_periods?.name ?? ''}${teamText ? ` · ${teamLabel}: ${teamText}` : ''}`} />}
       <div className="flex flex-wrap items-center gap-3">
         <Link href="/app/aula" className="link text-sm">← Mis cursos</Link>
         {s.room_code && <CopyCode code={s.room_code} />}

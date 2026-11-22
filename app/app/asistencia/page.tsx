@@ -1,3 +1,4 @@
+import { idsOrNone, myTeachingSectionIds } from '@/lib/teaching';
 import Link from 'next/link';
 import { getContext, can, requireOrg } from '@/lib/context';
 import { PageHeader, Card, Empty, Badge, Stat, Tabs } from '@/components/ui';
@@ -64,7 +65,7 @@ export default async function AsistenciaPage({ searchParams }: { searchParams: P
   const tabs = [['estudiantes', 'Estudiantes'], ['alertas', '⚠ Alertas'], ['profesores', 'Profesores'], ...(hrView ? [['personal', 'Personal']] : [])]
     .map(([key, l]) => ({ key, label: l, href: `/app/asistencia?t=${key}${q ? `&${q}` : ''}` }));
   let secQ = ctx.supabase.from('sections').select('id, code, courses(code, name)').eq('organization_id', orgId).order('code').limit(500);
-  if (!staffView && ctx.teacherId) secQ = secQ.eq('teacher_id', ctx.teacherId);
+  if (!staffView && ctx.teacherId) secQ = secQ.in('id', idsOrNone(await myTeachingSectionIds(ctx)));
   const { data: secs } = await secQ;
 
   const filters = (

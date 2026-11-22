@@ -1,3 +1,4 @@
+import { idsOrNone, myTeachingSectionIds } from '@/lib/teaching';
 import Link from 'next/link';
 import { OwnerActions } from '@/components/owner-actions';
 import { getContext, can, requireOrg } from '@/lib/context';
@@ -48,7 +49,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ m
     const { data } = await ctx.supabase.from('section_enrollments').select('sections(code, courses(name), section_schedules(weekday, time_slot, rooms(code)))').eq('student_id', ctx.studentId).neq('status', 'dropped');
     schedule = (data ?? []).flatMap((x: any) => (x.sections?.section_schedules ?? []).map((h: any) => ({ ...h, course: x.sections.courses?.name, code: x.sections.code })));
   } else if (ctx.teacherId) {
-    const { data } = await ctx.supabase.from('sections').select('code, courses(name), section_schedules(weekday, time_slot, rooms(code))').eq('teacher_id', ctx.teacherId);
+    const { data } = await ctx.supabase.from('sections').select('code, courses(name), section_schedules(weekday, time_slot, rooms(code))').in('id', idsOrNone(await myTeachingSectionIds(ctx)));
     schedule = (data ?? []).flatMap((s: any) => (s.section_schedules ?? []).map((h: any) => ({ ...h, course: s.courses?.name, code: s.code })));
   }
   schedule.sort((a, b) => a.weekday - b.weekday || String(a.time_slot).localeCompare(String(b.time_slot)));

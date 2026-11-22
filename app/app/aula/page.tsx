@@ -1,3 +1,4 @@
+import { idsOrNone, myTeachingSectionIds } from '@/lib/teaching';
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { getContext, can, requireOrg } from '@/lib/context';
@@ -21,7 +22,7 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ a
   if (ctx.studentId && !ctx.teacherId && !can(ctx, 'sections.view')) {
     const { data: se } = await ctx.supabase.from('section_enrollments').select('section_id').eq('student_id', ctx.studentId).neq('status', 'dropped');
     q = q.in('id', (se ?? []).map((x: any) => x.section_id).concat(['00000000-0000-0000-0000-000000000000']));
-  } else if (ctx.teacherId && !can(ctx, 'sections.view')) q = q.eq('teacher_id', ctx.teacherId);
+  } else if (ctx.teacherId && !can(ctx, 'sections.view')) q = q.in('id', idsOrNone(await myTeachingSectionIds(ctx)));
   const { data: sections } = await q;
   // 🎨 Color y fondo de cada tarjeta (si la actualización aún no está instalada, se ven como siempre)
   const { data: looks } = sections?.length ? await ctx.supabase.from('sections').select('id, card_color, card_image, courses(card_color, card_image)').in('id', sections.map((x: any) => x.id)) : { data: null };

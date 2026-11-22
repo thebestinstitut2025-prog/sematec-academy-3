@@ -1,3 +1,4 @@
+import { idsOrNone, myTeachingSectionIds } from '@/lib/teaching';
 import Link from 'next/link';
 import { OwnerActions } from '@/components/owner-actions';
 import { notFound } from 'next/navigation';
@@ -23,7 +24,7 @@ export default async function Page() {
     campusOptions(ctx),
     sb.from('organizations').select('timezone').eq('id', orgId).single(),
   ]);
-  const mySections = ctx.teacherId ? (await sb.from('sections').select('id, code, courses(code, name)').eq('teacher_id', ctx.teacherId)).data ?? [] : [];
+  const mySections = ctx.teacherId ? (await sb.from('sections').select('id, code, courses(code, name)').in('id', idsOrNone(await myTeachingSectionIds(ctx)))).data ?? [] : [];
   const canCreateRoom = can(ctx, 'conferences.create') || mySections.length > 0;
   const now = Date.now();
 

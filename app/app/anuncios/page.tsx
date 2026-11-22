@@ -1,3 +1,4 @@
+import { idsOrNone, myTeachingSectionIds } from '@/lib/teaching';
 import { getContext, can, requireOrg } from '@/lib/context';
 import { OwnerActions } from '@/components/owner-actions';
 import { PageHeader, Card, Badge, Empty } from '@/components/ui';
@@ -16,7 +17,7 @@ export default async function Page() {
     ctx.supabase.from('announcements').select('*, sections(code, courses(name))')
       .eq('organization_id', orgId).order('pinned', { ascending: false }).order('published_at', { ascending: false }).limit(100),
     ctx.teacherId || admin
-      ? ctx.supabase.from('sections').select('id, code, courses(name)').eq('organization_id', orgId).match(admin ? {} : { teacher_id: ctx.teacherId! }).limit(200)
+      ? (admin ? ctx.supabase.from('sections').select('id, code, courses(name)').eq('organization_id', orgId) : ctx.supabase.from('sections').select('id, code, courses(name)').eq('organization_id', orgId).in('id', idsOrNone(await myTeachingSectionIds(ctx)))).limit(200)
       : Promise.resolve({ data: [] as any[] }),
   ]);
   const sectionOpts = (mySections ?? []).map((s: any) => ({ value: s.id, label: `${s.code} · ${s.courses?.name ?? ''}` }));
