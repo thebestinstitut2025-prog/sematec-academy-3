@@ -13,6 +13,7 @@ import { ActionForm, Field, Grid, SelectField, TextArea } from '@/components/for
 import { fmtDateTime } from '@/lib/format';
 import { ACCEPT, isoToLocal } from '@/lib/lms';
 import { EditBox } from '@/components/edit-box';
+import { ContactButtons } from '@/components/contact-buttons';
 import { CardStyleEditor } from '@/components/card-style-editor';
 import { cardStyle, pickCard } from '@/lib/card-style';
 import { setCardStyle } from '../tarjeta-actions';
@@ -40,10 +41,13 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const banner = cardStyle(pick.color, pick.image);
   // 👩‍🏫 Todos los profesores de la sala (titular, co-profesores y ayudantes)
   const { data: teamData } = await ctx.supabase.rpc('section_teacher_list', { p_section: id });
-  const team = (teamData ?? []) as { full_name: string; role: string }[];
+  const team = (teamData ?? []) as { full_name: string; role: string; user_id: string | null }[];
   const teamText = team.length ? team.map((x) => `${x.full_name}${x.role === 'titular' ? '' : x.role === 'ayudante' ? ' (ayudante)' : ' (co-profesor)'}`).join(', ')
     : s.teachers ? `${s.teachers.first_names} ${s.teachers.last_names}` : '';
   const teamLabel = team.length > 1 ? 'Profesores' : 'Profesor';
+  // 📞 Cómo contactar a cada profesor (según la privacidad que eligió cada uno)
+  const { data: contactData } = await ctx.supabase.rpc('my_contacts', { p_org: s.organization_id });
+  const contactOf = new Map(((contactData ?? []) as { user_id: string; email: string | null; phone: string | null }[]).map((c) => [c.user_id, c]));
   const base = `/app/aula/${id}`;
   const { data: assessments } = manager ? await ctx.supabase.from('assessments').select('id, name, weight_pct').eq('section_id', id) : { data: [] as any[] };
   const assessOpts = (assessments ?? []).map((a: any) => ({ value: a.id, label: `${a.name} (${a.weight_pct}%)` }));
@@ -473,6 +477,13 @@ export default async function Page({ params, searchParams }: { params: Promise<{
         {s.room_code && <CopyCode code={s.room_code} />}
         {manager && <Link className="link text-sm" href={`/app/secciones/${s.id}`}>👥 Estudiantes de esta sala</Link>}
       </div>
+      {team.some((x) => x.user_id && x.user_id !== ctx.user.id) && (
+        <details className="mt-3 max-w-3xl rounded-xl border border-slate-200 bg-white text-sm" data-testid="contactar-profesores">
+          <summary className="cursor-pointer px-3 py-2 font-semibold text-brand-700">📞 Contactar a {team.length > 1 ? 'los profesores' : 'el profesor'}</summary>
+          <ul className="divide-y divide-slate-100 border-t border-slate-100">{team.filter((x) => x.user_id && x.user_id !== ctx.user.id).map((x) => (
+            <li key={x.user_id} className="flex flex-wrap items-center justify-between gap-2 px-3 py-2"><b>{x.full_name}</b>
+              <ContactButtons phone={contactOf.get(x.user_id!)?.phone} email={contactOf.get(x.user_id!)?.email} userId={x.user_id} name={x.full_name} /></li>))}</ul>
+        </details>)}
       {(manager || can(ctx, 'sections.edit')) && (
         <EditBox label="🎨 Personalizar tarjeta (color y fondo)" testid="personalizar-tarjeta" className="mt-3 max-w-xl">
           <ActionForm action={setCardStyle} submitLabel="Guardar estilo" resetOnSuccess={false}>

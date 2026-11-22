@@ -1,3 +1,4 @@
+import { ContactButtons } from '@/components/contact-buttons';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
 import { getContext, can, requireOrg } from '@/lib/context';
@@ -40,6 +41,8 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
     <>
       <PageHeader title={fullName(s)} subtitle={s.student_code}
         actions={<><StatusBadge status={s.status} />{s.user_id ? <Badge color="green">Con acceso al portal</Badge> : <Badge>Sin acceso al portal</Badge>}</>} />
+      <div className="mb-4 flex flex-wrap items-center gap-2" data-testid="contactar-estudiante"><span className="text-sm text-slate-600">Contactar{s.phone ? ` (${s.phone})` : ''}:</span>
+        <ContactButtons phone={s.phone} email={s.email} userId={s.user_id} name={fullName(s)} /></div>
       <div className="grid gap-6 xl:grid-cols-2">
         <Card title="Matrículas">
           {enr.data?.length ? <table className="table"><thead><tr><th>Programa</th><th>Periodo</th><th>Fecha</th><th>Estado</th></tr></thead><tbody>

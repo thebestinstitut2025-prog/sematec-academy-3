@@ -34,6 +34,8 @@ export function baseNav(ctx: Ctx): NavItem[] {
     { href: '/app/anuncios', label: 'Anuncios', icon: '📢' },
     { href: '/app/mensajes', label: 'Mensajes', icon: '💬' },
     { href: '/app/correo', label: 'Correo', icon: '✉' },
+    { href: '/app/contactos', label: 'Contactos', icon: '📇' },
+    { href: '/app/apps', label: 'Apps y accesos', icon: '📱' },
     { href: '/app/oficina', label: 'Oficina (Word, Excel…)', icon: '💼' },
     { href: '/app/biblioteca', label: 'Biblioteca', icon: '📖' },
     { href: '/app/soporte', label: 'Soporte técnico', icon: '🛟' },
