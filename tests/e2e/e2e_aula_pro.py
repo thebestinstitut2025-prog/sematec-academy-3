@@ -192,18 +192,19 @@ with sync_playwright() as pw:
     sc.close(); pc.close()
 
     # Personalizar el menú
-    go(o, f'{BASE}/app/modulos')
+    go(o, f'{BASE}/app/modulos?t=menu')
     o.fill('input[name="label:/app/anuncios"]', 'Novedades'); o.check('input[name=hide][value="/app/encuestas"]')
     o.click('button:has-text("Guardar menú")'); status_msg(o)
     go(o, f'{BASE}/app')
     nav = o.locator('aside nav').first.inner_text()
     check('Novedades' in nav and 'Anuncios' not in nav and 'Encuestas' not in nav, '☰ El propietario renombra y oculta opciones del menú')
     check(o.locator('input[name=hide][value="/app/perfil"]').count() == 0, '☰ «Mi cuenta» y «Módulos y menú» no se pueden ocultar (nunca queda sin acceso)')
-    go(o, f'{BASE}/app/modulos')
+    go(o, f'{BASE}/app/modulos?t=menu')
     o.fill('input[name="label:/app/anuncios"]', ''); o.uncheck('input[name=hide][value="/app/encuestas"]'); o.click('button:has-text("Guardar menú")'); status_msg(o)
+    go(o, f'{BASE}/app/modulos')
 
     # Editar el módulo: no disponible
-    o.locator('[data-testid=modulo]:has-text("Préstamo de equipos") summary:has-text("Editar módulo")').click()
+    o.locator('[data-testid=modulo]:has-text("Préstamo de equipos") summary:has-text("Editar todo")').click()
     ef = o.locator('[data-testid=modulo]:has-text("Préstamo de equipos") form:has(button:has-text("Guardar cambios"))')
     ef.locator('input[name=active][type=checkbox]').uncheck(); ef.locator('button:has-text("Guardar cambios")').click()
     until(lambda: sql("select active from custom_modules where slug = 'prestamo-de-equipos'") == 'f', msg='módulo no disponible')

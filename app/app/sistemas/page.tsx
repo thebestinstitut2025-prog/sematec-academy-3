@@ -3,6 +3,7 @@ import { getContext, requireOrg } from '@/lib/context';
 import { PageHeader, Card, Stat } from '@/components/ui';
 import { ActionForm } from '@/components/forms';
 import { AREAS, CATALOG, type AreaKey } from '@/lib/systems-catalog';
+import { loadAreas } from '@/lib/areas';
 import { installSystems, pinSystem, uninstallSystem } from './actions';
 import { SystemsView } from './systems-view';
 
@@ -18,8 +19,13 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ v
     ctx.isOwner ? ctx.supabase.from('custom_modules').select('slug, catalog_key, active, show_in_menu').eq('organization_id', orgId) : Promise.resolve({ data: [] as any[] }),
   ]);
   const systems = (mine ?? []) as { slug: string; name: string; icon: string; area: string | null; description: string | null; manage: boolean; catalog_key: string | null; show_in_menu: boolean }[];
-  const areas = [...(Object.entries(AREAS) as [AreaKey, (typeof AREAS)[AreaKey]][]).map(([key, a]) => ({ key, title: a.title, icon: a.icon, color: a.color })),
-    { key: 'otros', title: 'Módulos propios de la institución', icon: '🧩', color: 'from-lime-700 to-green-500' }];
+  const cfg = await loadAreas(ctx.supabase, orgId);
+  const keys = new Set(cfg.areas.map((a) => a.key));
+  // Sistemas de un área borrada u oculta pasan a «otros» para que nunca se pierdan
+  const visible = new Set(cfg.areas.filter((a) => !a.hidden).map((a) => a.key));
+  for (const x of systems) if (!x.area || !keys.has(x.area) || !visible.has(x.area)) x.area = 'otros';
+  const areas = cfg.areas.filter((a) => !a.hidden || a.key === 'otros').map((a) => ({ key: a.key, title: a.title, icon: a.icon, color: a.color }));
+  const areaInfo = new Map(cfg.areas.map((a) => [a.key, a]));
   const inst = new Map(((mods ?? []) as any[]).filter((m) => m.catalog_key).map((m) => [m.catalog_key as string, m]));
   const active = CATALOG.filter((s) => inst.get(s.key)?.active).length;
   const catalog = ctx.isOwner && v === 'catalogo';
@@ -44,9 +50,9 @@ export default async function Page({ searchParams }: { searchParams: Promise<{ v
             const items = CATALOG.filter((s) => s.area === key);
             return (
               <section key={key} className="mb-8" data-testid={`catalogo-${key}`}>
-                <div className={`mb-3 flex flex-wrap items-center gap-3 rounded-2xl bg-gradient-to-r ${a.color} p-4 text-white`}>
-                  <span className="text-3xl" aria-hidden>{a.icon}</span>
-                  <span className="min-w-0 flex-1"><b className="block text-lg">{a.title} · {items.length}</b><span className="text-sm text-white/85">{a.text}</span></span>
+                <div className={`mb-3 flex flex-wrap items-center gap-3 rounded-2xl bg-gradient-to-r ${areaInfo.get(key)?.color ?? a.color} p-4 text-white`}>
+                  <span className="text-3xl" aria-hidden>{areaInfo.get(key)?.icon ?? a.icon}</span>
+                  <span className="min-w-0 flex-1"><b className="block text-lg">{areaInfo.get(key)?.title ?? a.title} · {items.length}</b><span className="text-sm text-white/85">{a.text}</span></span>
                   <ActionForm action={installSystems} inline submitLabel="Activar toda el área" submitClass="rounded-lg bg-white/20 px-3 py-1.5 text-sm font-semibold hover:bg-white/30"><input type="hidden" name="which" value={`area:${key}`} /></ActionForm>
                 </div>
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">

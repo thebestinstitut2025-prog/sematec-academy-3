@@ -46,3 +46,53 @@ export function showValue(f: ModField, v: unknown): string {
   if (f.type === 'date') { const [y, m, d] = String(v).split('-'); return d ? `${d}-${m}-${y}` : String(v); }
   return String(v);
 }
+
+// ---------- Estados (flujo) y funciones de un sistema ----------
+export const WF_COLORS = [['blue', 'Azul'], ['amber', 'Amarillo'], ['green', 'Verde'], ['red', 'Rojo'], ['violet', 'Violeta'], ['slate', 'Gris']] as const;
+export type WfStep = { key: string; label: string; color: string; final?: boolean };
+
+/** Valida el flujo de estados: máx. 12, nombres únicos, colores permitidos. Los nombres nuevos reciben su clave. */
+export function cleanWorkflow(raw: unknown): WfStep[] {
+  if (!Array.isArray(raw)) return [];
+  const colors = new Set(WF_COLORS.map(([c]) => c));
+  const seen = new Set<string>(); const out: WfStep[] = [];
+  for (const s of raw.slice(0, 12)) {
+    const label = String(s?.label ?? '').replace(/[<>]/g, '').trim().slice(0, 40);
+    if (!label) continue;
+    let key = keyOf(String(s?.key || label)).slice(0, 30);
+    while (seen.has(key)) key = `${key}_2`;
+    seen.add(key);
+    out.push({ key, label, color: colors.has(s?.color) ? s.color : 'blue', ...(s?.final ? { final: true } : {}) });
+  }
+  return out;
+}
+
+export const FEATURE_LIST = [
+  ['assignee', '👤 Responsable de cada registro'], ['due', '📅 Fecha límite'], ['files', '📎 Archivos adjuntos'],
+  ['notify', '✉ Aviso por correo al cambiar de estado'], ['self_service', '🙋 Autoservicio: cualquier persona de la institución envía solicitudes y ve solo las suyas'],
+] as const;
+
+/** Estructura reutilizable de un módulo (sin registros): para duplicar, plantillas y exportar. */
+export type ModuleBlueprint = {
+  name: string; icon: string; description: string | null; code_prefix: string; fields: ModField[];
+  workflow: WfStep[]; features: Record<string, unknown>; area: string | null; view_roles: string[]; edit_roles: string[];
+};
+
+export function blueprintOf(m: Partial<CustomModule> & Record<string, any>): ModuleBlueprint {
+  return {
+    name: String(m.name ?? 'Módulo').slice(0, 80), icon: String(m.icon ?? '🧩').slice(0, 8), description: m.description ?? null,
+    code_prefix: String(m.code_prefix ?? ''), fields: cleanFields(m.fields), workflow: cleanWorkflow(m.workflow),
+    features: cleanFeatures(m.features), area: typeof m.area === 'string' ? m.area.slice(0, 24) : null,
+    view_roles: Array.isArray(m.view_roles) ? m.view_roles.filter((r: unknown) => typeof r === 'string' && /^[a-z_]{2,40}$/.test(r)).slice(0, 30) : [],
+    edit_roles: Array.isArray(m.edit_roles) ? m.edit_roles.filter((r: unknown) => typeof r === 'string' && /^[a-z_]{2,40}$/.test(r)).slice(0, 30) : [],
+  };
+}
+
+export function cleanFeatures(raw: unknown): Record<string, unknown> {
+  const f = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const [k] of FEATURE_LIST) if (f[k] === true) out[k] = true;
+  for (const k of ['amount', 'date'] as const) if (typeof f[k] === 'string' && /^[a-z0-9_]{1,30}$/.test(f[k] as string)) out[k] = f[k];
+  if (f.public_view === true) out.public_view = true;
+  return out;
+}
