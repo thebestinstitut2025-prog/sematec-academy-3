@@ -21,7 +21,7 @@ import { WindowBar } from '@/components/window-bar';
 import { cardThemeAttrs, resolveCardTheme } from '@/lib/card-theme';
 import { canBypassMaint, hrefInMaint, isActive, loadMaint, maintFor } from '@/lib/maintenance';
 import { areaOfHref, loadAreas } from '@/lib/areas';
-import { fmtDateTime } from '@/lib/format';
+import { fmtDateTime, fmtMoney } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
@@ -42,6 +42,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const path = (await headers()).get('x-sematec-path') ?? '';
   const blocked = ctx.orgMode === 'aula' && aulaExcluded(path);
   // 🛠 Mantención: toda la plataforma o algunas opciones, sistemas o áreas
+  // 💳 Aviso de deuda vencida para el estudiante (con botón para pagar)
+  let debt: { amount: number; currency: string } | null = null;
+  if (ctx.studentId && !path.startsWith('/app/pagar')) {
+    const { data: od } = await ctx.supabase.from('installment_balances').select('outstanding, currency').eq('student_id', ctx.studentId).eq('cancelled', false).gt('outstanding', 0).gt('days_overdue', 0).limit(100);
+    const sum = (od ?? []).reduce((a: number, r: any) => a + Number(r.outstanding), 0);
+    if (sum > 0) debt = { amount: sum, currency: (od as any[])[0].currency };
+  }
   let maintHit: ReturnType<typeof maintFor> = null; let maintBanner = '';
   if (ctx.orgId) {
     const [maint, areasCfg, { data: modAreas }] = await Promise.all([
@@ -97,6 +104,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <VersionWatcher />
         {ctx.orgId && <UndoBar />}
         <ResultToast />
+        {debt && <a href="/app/pagar" className="mb-3 flex flex-wrap items-center gap-2 rounded-xl bg-red-50 px-4 py-2 text-sm font-semibold text-red-800 ring-1 ring-red-200 print:hidden" data-testid="aviso-deuda">⚠ Tiene cuotas vencidas por {fmtMoney(debt.amount, debt.currency)}. <span className="ml-auto rounded-lg bg-red-600 px-3 py-1 text-white">💳 Pagar ahora</span></a>}
         {maintBanner && <a href="/app/mantencion" className="mb-3 block rounded-xl bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-900" data-testid="aviso-mantencion">🛠 {maintBanner} Ir a Mantención →</a>}
         {!ctx.org && !ctx.isPlatformAdmin ? (
           <div className="card card-pad max-w-xl">

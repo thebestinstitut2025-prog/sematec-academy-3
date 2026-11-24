@@ -1,9 +1,15 @@
 'use server';
 import { revalidatePath } from 'next/cache';
 import { emailReceipt } from '@/lib/receipt-access';
-import { getContext } from '@/lib/context';
+import { getContext, can } from '@/lib/context';
+import { createAdminClient } from '@/lib/supabase/admin';
+import { mailEnabled, mailLayout, sendMail } from '@/lib/mailer';
+import { env } from '@/lib/env';
+import { fmtMoney } from '@/lib/format';
+import { PAY_KEY } from '@/lib/pay-config';
 import { fail, guard, num, ok, reqStr, str, ValidationError, type ActionResult } from '@/lib/actions';
 
+const escapeHtml = (x: string) => x.replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!));
 const refresh = () => revalidatePath('/app/finanzas', 'layout');
 
 export async function createCharge(fd: FormData): Promise<ActionResult> {
@@ -125,5 +131,52 @@ export async function deleteExpense(fd: FormData): Promise<ActionResult> {
     if (!count) return fail('No tiene permiso para eliminar gastos.');
     refresh();
     return ok('Gasto eliminado (puede deshacerlo con «↶ Deshacer»).');
+  });
+}
+
+/** 🏦 Revisar una transferencia informada: confirmar (registra el pago y envía la boleta) o rechazar con motivo. */
+export async function reviewTransfer(fd: FormData): Promise<ActionResult> {
+  return guard(async () => {
+    const ctx = await getContext();
+    const id = reqStr(fd, 'id', 'comprobante');
+    const approve = fd.get('decision') === 'approve';
+    const reason = str(fd, 'reason');
+    const { data, error } = await ctx.supabase.rpc('review_transfer_proof', { p_proof: id, p_approve: approve, p_reason: reason });
+    if (error) return fail(error);
+    refresh(); revalidatePath('/app/pagar');
+    const admin = createAdminClient();
+    const { data: t } = await admin.from('transfer_proofs').select('amount, currency, created_by, student_id, students(email, first_names), profiles:created_by(email)').eq('id', id).single();
+    const payer = ((t as any)?.profiles?.email as string | undefined)?.toLowerCase();
+    if (approve) {
+      const mail = await emailReceipt(String(data));
+      // Si lo informó el apoderado, también le llega a él
+      if (payer && payer !== String((t as any)?.students?.email ?? '').toLowerCase()) await emailReceipt(String(data), payer);
+      const { data: p } = await ctx.supabase.from('payments').select('receipt_number').eq('id', data).single();
+      return ok(`Transferencia confirmada ✓. Pago registrado con boleta N° ${p?.receipt_number}${mail.ok ? ` (${mail.text})` : ` (boleta no enviada por correo: ${mail.text})`}.`);
+    }
+    if (payer && mailEnabled()) {
+      const name = (t as any)?.students?.first_names ?? '';
+      await sendMail(payer, 'Transferencia no confirmada', mailLayout('Pagos', 'Su transferencia no pudo confirmarse',
+        `<p>Hola:</p><p>Revisamos la transferencia informada${name ? ` para ${name}` : ''} por <b>${fmtMoney(Number(t?.amount), String(t?.currency))}</b> y no pudimos confirmarla.</p><p><b>Motivo:</b> ${escapeHtml(reason ?? '')}</p><p>Puede volver a informarla con el comprobante correcto en «Pagar».</p>`,
+        { href: `${env.siteUrl()}/app/pagar`, label: 'Ir a Pagar' }), `Su transferencia no pudo confirmarse. Motivo: ${reason}`).catch(() => {});
+    }
+    return ok('Transferencia rechazada. Se avisó por correo a quien la informó.');
+  });
+}
+
+/** Datos para transferir y pagar en oficina (los ve quien debe pagar). */
+export async function savePayConfig(fd: FormData): Promise<ActionResult> {
+  return guard(async () => {
+    const ctx = await getContext();
+    if (!(can(ctx, 'finance.admin') || can(ctx, 'settings.admin'))) return fail('No tiene permisos (finance.admin).');
+    const value = { transfer: fd.get('transfer') === 'on', bank_info: (str(fd, 'bank_info') ?? '').slice(0, 1500), office: fd.get('office') === 'on', office_info: (str(fd, 'office_info') ?? '').slice(0, 1000) };
+    if (value.transfer && value.bank_info.length < 10) return fail('Escriba los datos de la cuenta: banco, tipo de cuenta, número, RUT, nombre y correo.');
+    const { data: ex } = await ctx.supabase.from('organization_settings').select('id').eq('organization_id', ctx.orgId!).eq('key', PAY_KEY).maybeSingle();
+    const { error } = ex
+      ? await ctx.supabase.from('organization_settings').update({ value, updated_by: ctx.user.id }).eq('id', ex.id)
+      : await ctx.supabase.from('organization_settings').insert({ organization_id: ctx.orgId, key: PAY_KEY, value, description: 'Datos de pago', updated_by: ctx.user.id });
+    if (error) return fail(error);
+    refresh(); revalidatePath('/app/pagar');
+    return ok('Datos de pago guardados. Ya aparecen en «Pagar» para estudiantes y apoderados.');
   });
 }

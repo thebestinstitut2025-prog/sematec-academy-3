@@ -4,6 +4,8 @@ import { getContext, can } from '@/lib/context';
 import { Card, StatusBadge } from '@/components/ui';
 import { ActionForm } from '@/components/forms';
 import { PrintButton } from '@/components/print-button';
+import { SharePdf } from '@/components/share-pdf';
+import { receiptFilename } from '@/lib/receipt';
 import { loadReceiptFor } from '@/lib/receipt-access';
 import { mailEnabled } from '@/lib/mailer';
 import { env } from '@/lib/env';
@@ -27,7 +29,8 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
         <a className="btn-primary" href={`/app/finanzas/boleta/${r.id}/pdf`} data-testid="descargar-boleta">⬇ Descargar PDF</a>
         <a className="btn-secondary" href={`/app/finanzas/boleta/${r.id}/pdf?ver=1`} target="_blank" rel="noopener noreferrer">👁 Ver PDF</a>
         <PrintButton />
-        {staff && <a className="btn-secondary" href={wa} target="_blank" rel="noopener noreferrer">📲 Enviar por WhatsApp</a>}
+        <a className="btn-secondary" href={wa} target="_blank" rel="noopener noreferrer">📲 Enviar por WhatsApp</a>
+        <SharePdf url={`/app/finanzas/boleta/${r.id}/pdf`} filename={receiptFilename(r)} text={`${r.org.name}: comprobante N° ${r.number} por ${fmtMoney(r.amount, r.currency)}`} />
       </div>
 
       <article className="card mx-auto max-w-3xl p-6 sm:p-10 print:shadow-none" data-testid="boleta">

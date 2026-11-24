@@ -14,7 +14,7 @@ export const RTL = new Set(['ar']);
 type Dict = Record<string, string>;
 const NAV: Record<string, Dict> = {
   en: {
-    'Inicio': 'Home', 'Mi portal': 'My portal', 'Mis pupilos': 'My children', 'Mi credencial': 'My ID card', 'Mis boletas': 'My receipts', 'Mis secciones': 'My sections',
+    'Inicio': 'Home', 'Mi portal': 'My portal', 'Mis pupilos': 'My children', 'Mi credencial': 'My ID card', 'Mis boletas': 'My receipts', 'Pagar': 'Pay', 'Mis secciones': 'My sections',
     'Estudiantes': 'Students', 'Profesores': 'Teachers', 'Carreras y asignaturas': 'Programs and courses', 'Secciones y notas': 'Sections and grades', 'Matrículas': 'Enrollments',
     'Finanzas': 'Finance', 'SEMATEC VENTA': 'SEMATEC STORE', 'Sucursales': 'Branches', 'Certificados': 'Certificates', 'Aula de aprendizaje': 'Learning classroom',
     'Aulas virtuales': 'Virtual classrooms', 'Anuncios': 'Announcements', 'Mensajes': 'Messages', 'Biblioteca': 'Library', 'Soporte técnico': 'Tech support',
@@ -25,7 +25,7 @@ const NAV: Record<string, Dict> = {
     'Sitio web y marca': 'Website and brand', 'Admisión web': 'Online admissions', 'Módulos y menú': 'Modules and menu', 'Mi cuenta': 'My account', 'Traductor': 'Translator',
   },
   pt: {
-    'Inicio': 'Início', 'Mi portal': 'Meu portal', 'Mis pupilos': 'Meus dependentes', 'Mi credencial': 'Minha carteirinha', 'Mis boletas': 'Meus recibos', 'Mis secciones': 'Minhas turmas',
+    'Inicio': 'Início', 'Mi portal': 'Meu portal', 'Mis pupilos': 'Meus dependentes', 'Mi credencial': 'Minha carteirinha', 'Mis boletas': 'Meus recibos', 'Pagar': 'Pagar', 'Mis secciones': 'Minhas turmas',
     'Estudiantes': 'Alunos', 'Profesores': 'Professores', 'Carreras y asignaturas': 'Cursos e disciplinas', 'Secciones y notas': 'Turmas e notas', 'Matrículas': 'Matrículas',
     'Finanzas': 'Finanças', 'SEMATEC VENTA': 'SEMATEC LOJA', 'Sucursales': 'Filiais', 'Certificados': 'Certificados', 'Aula de aprendizaje': 'Sala de aprendizagem',
     'Aulas virtuales': 'Salas virtuais', 'Anuncios': 'Avisos', 'Mensajes': 'Mensagens', 'Biblioteca': 'Biblioteca', 'Soporte técnico': 'Suporte técnico',
@@ -36,7 +36,7 @@ const NAV: Record<string, Dict> = {
     'Sitio web y marca': 'Site e marca', 'Admisión web': 'Admissão online', 'Módulos y menú': 'Módulos e menu', 'Mi cuenta': 'Minha conta', 'Traductor': 'Tradutor',
   },
   fr: {
-    'Inicio': 'Accueil', 'Mi portal': 'Mon portail', 'Mis pupilos': 'Mes enfants', 'Mi credencial': 'Ma carte', 'Mis boletas': 'Mes reçus', 'Mis secciones': 'Mes groupes',
+    'Inicio': 'Accueil', 'Mi portal': 'Mon portail', 'Mis pupilos': 'Mes enfants', 'Mi credencial': 'Ma carte', 'Mis boletas': 'Mes reçus', 'Pagar': 'Payer', 'Mis secciones': 'Mes groupes',
     'Estudiantes': 'Étudiants', 'Profesores': 'Enseignants', 'Carreras y asignaturas': 'Formations et matières', 'Secciones y notas': 'Groupes et notes', 'Matrículas': 'Inscriptions',
     'Finanzas': 'Finances', 'SEMATEC VENTA': 'SEMATEC BOUTIQUE', 'Sucursales': 'Succursales', 'Certificados': 'Certificats', 'Aula de aprendizaje': "Salle d'apprentissage",
     'Aulas virtuales': 'Classes virtuelles', 'Anuncios': 'Annonces', 'Mensajes': 'Messages', 'Biblioteca': 'Bibliothèque', 'Soporte técnico': 'Support technique',

@@ -4,6 +4,7 @@ export function FinanceTabs({ current }: { current: string }) {
     { key: 'cuentas', label: 'Estados de cuenta', href: '/app/finanzas' },
     { key: 'balance', label: '📊 Ingresos y gastos', href: '/app/finanzas/balance' },
     { key: 'pagos', label: 'Pagos y boletas', href: '/app/finanzas/pagos' },
+    { key: 'transferencias', label: '🏦 Transferencias', href: '/app/finanzas/transferencias' },
     { key: 'gastos', label: '💸 Gastos', href: '/app/finanzas/gastos' },
     { key: 'cargos', label: 'Cargos y cuotas', href: '/app/finanzas/cargos' },
     { key: 'becas', label: 'Becas y descuentos', href: '/app/finanzas/becas' },

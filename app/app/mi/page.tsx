@@ -4,7 +4,8 @@ import { getContext } from '@/lib/context';
 import { PageHeader, Card, Empty, StatusBadge, Badge } from '@/components/ui';
 import { PayInstallments } from '@/components/pay-installments';
 import { availableProviders } from '@/lib/payments';
-import { payInstallments } from '@/app/app/pagar/actions';
+import { payInstallments, submitTransfer } from '@/app/app/pagar/actions';
+import { loadPayConfig } from '@/lib/pay-config';
 import { WEEKDAYS, fmtDate, fmtDateTime, fmtMoney, fmtNum, fmtSlot } from '@/lib/format';
 
 export const metadata = { title: 'Mi portal' };
@@ -14,6 +15,7 @@ export default async function Page() {
   if (!ctx.studentId) notFound();
   const sb = ctx.supabase;
   const sid = ctx.studentId;
+  const pay = await loadPayConfig(ctx.orgId);
   const [{ data: sections }, { data: grades }, { data: att }, { data: balance }, { data: inst }, { data: certs }, { data: confs }] = await Promise.all([
     sb.from('section_enrollments').select('section_id, status, sections(id, code, courses(code, name), teachers(first_names, last_names), section_schedules(weekday, time_slot, rooms(code)))').eq('student_id', sid).neq('status', 'dropped'),
     sb.from('grades').select('grade, assessments(name, weight_pct, section_id)').eq('student_id', sid),
@@ -48,7 +50,8 @@ export default async function Page() {
         <div className="space-y-6">
           <Card title="Estado de cuenta">
             {balance?.length ? balance.map((b: any) => <p key={b.account_id} className="text-sm">Saldo: <b>{fmtMoney(b.outstanding, b.currency)}</b>{Number(b.overdue) > 0 && <> · <span className="text-red-600">vencido {fmtMoney(b.overdue, b.currency)}</span></>}</p>) : <p className="text-sm text-slate-500">Sin deuda.</p>}
-            {!!inst?.length && <PayInstallments studentId={sid} items={inst as any[]} providers={availableProviders(inst[0].currency)} action={payInstallments} />}
+            {!!inst?.length && <PayInstallments studentId={sid} items={inst as any[]} providers={availableProviders(inst[0].currency)} action={payInstallments}
+              transfer={pay.transfer ? { info: pay.bank_info } : null} transferAction={submitTransfer} org={ctx.orgId ?? undefined} office={pay.office ? pay.office_info || null : null} />}
             <span className="mt-3 flex flex-wrap gap-3 text-sm"><Link className="link" href={`/app/finanzas/cuenta/${sid}`}>Ver detalle y cuotas →</Link><Link className="link" href="/app/boletas" data-testid="link-mis-boletas">🧾 Mis boletas →</Link></span>
           </Card>
           <Card title="Clases virtuales">

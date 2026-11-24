@@ -84,6 +84,11 @@ async function fulfill(orderId: string) {
     ? await admin.rpc('fulfill_registration_order', { p_order: orderId, p_user: userId })
     : await admin.rpc('fulfill_checkout_order', { p_order: orderId, p_user: userId });
   if (error) throw new Error(error.message);
+  // 🧾 Boleta automática al correo de quien pagó (curso o inscripción); si falla el correo, el pago igual queda
+  try {
+    const { data: o2 } = await admin.from('checkout_orders').select('payment_id').eq('id', orderId).single();
+    if (o2?.payment_id) { const { emailReceipt } = await import('@/lib/receipt-access'); await emailReceipt(String(o2.payment_id), o.buyer_email); }
+  } catch (e) { console.error('boleta web', e); }
 }
 
 /** Cuenta de la persona que paga o se inscribe (la crea si no existe; luego define su contraseña con el enlace seguro). */

@@ -1,6 +1,6 @@
 /** 🗺 Mapa de la plataforma: cada sistema en su área, con una descripción breve. */
 export const MAP_GROUPS: { key: string; title: string; icon: string; color: string; hrefs: string[] }[] = [
-  { key: 'mi', title: 'Mi espacio', icon: '👤', color: 'from-slate-700 to-slate-500', hrefs: ['/app', '/app/mi', '/app/apoderado', '/app/credencial', '/app/boletas', '/app/docencia', '/app/perfil'] },
+  { key: 'mi', title: 'Mi espacio', icon: '👤', color: 'from-slate-700 to-slate-500', hrefs: ['/app', '/app/mi', '/app/apoderado', '/app/credencial', '/app/pagar', '/app/boletas', '/app/docencia', '/app/perfil'] },
   { key: 'academico', title: 'Gestión académica', icon: '🏛', color: 'from-blue-700 to-indigo-500', hrefs: ['/app/estudiantes', '/app/profesores', '/app/academico', '/app/secciones', '/app/inscripciones', '/app/matriculas', '/app/calificaciones', '/app/asistencia', '/app/certificados', '/app/admision'] },
   { key: 'aula', title: 'Aprendizaje y clases', icon: '🎓', color: 'from-violet-700 to-fuchsia-500', hrefs: ['/app/aula', '/app/conferencias', '/app/biblioteca', '/app/reservas'] },
   { key: 'comunidad', title: 'Comunicación y comunidad', icon: '💬', color: 'from-sky-700 to-cyan-500', hrefs: ['/app/anuncios', '/app/mensajes', '/app/contactos', '/app/apps', '/app/calendario', '/app/encuestas', '/app/punto-estudiantil', '/app/oficinas', '/app/egresados', '/app/empleos', '/app/soporte'] },
@@ -12,7 +12,7 @@ export const MAP_GROUPS: { key: string; title: string; icon: string; color: stri
 
 export const MAP_DESC: Record<string, string> = {
   '/app': 'Resumen del día, accesos rápidos y avisos', '/app/mi': 'Mis cursos, notas, pagos y documentos', '/app/apoderado': 'Notas, asistencia y pagos de sus pupilos',
-  '/app/credencial': 'Credencial digital con código QR', '/app/boletas': 'Boletas y comprobantes de pago', '/app/docencia': 'Secciones, asistencia y notas que dicto',
+  '/app/credencial': 'Credencial digital con código QR', '/app/pagar': 'Pagar cuotas con tarjeta o transferencia', '/app/boletas': 'Boletas y comprobantes de pago', '/app/docencia': 'Secciones, asistencia y notas que dicto',
   '/app/perfil': 'Datos, contraseña y verificación en dos pasos', '/app/estudiantes': 'Fichas, documentos y estado de cada estudiante',
   '/app/profesores': 'Docentes, especialidades y carga académica', '/app/academico': 'Carreras, mallas, asignaturas y períodos', '/app/secciones': 'Cursos dictados, horarios y libro de notas',
   '/app/inscripciones': 'Inscripción con curso, jornada, modalidad y pago', '/app/matriculas': 'Matrícula en carreras y cursos, aranceles y cuotas',

@@ -16,6 +16,7 @@ export function baseNav(ctx: Ctx): NavItem[] {
   if (ctx.studentId) items.push({ href: '/app/mi', label: 'Mi portal', icon: '🎓' });
   if (ctx.isGuardian) items.push({ href: '/app/apoderado', label: 'Mis pupilos', icon: '👪' });
   if (ctx.studentId) items.push({ href: '/app/credencial', label: 'Mi credencial', icon: '🪪' });
+  if (ctx.studentId || ctx.isGuardian) items.push({ href: '/app/pagar', label: 'Pagar', icon: '💳' });
   if (ctx.studentId || ctx.isGuardian) items.push({ href: '/app/boletas', label: 'Mis boletas', icon: '🧾' });
   if (ctx.teacherId) items.push({ href: '/app/docencia', label: 'Mis secciones', icon: '📚' });
   if (can(ctx, 'students.view')) items.push({ href: '/app/estudiantes', label: 'Estudiantes', icon: '👥' });

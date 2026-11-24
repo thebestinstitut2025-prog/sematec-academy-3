@@ -2,7 +2,7 @@ import 'server-only';
 import type { getContext } from '@/lib/context';
 
 type Ctx = Awaited<ReturnType<typeof getContext>>;
-export type AttachType = 'submission' | 'quiz_attempt' | 'external_eval' | 'message' | 'assignment' | 'quiz' | 'eval_material' | 'content' | 'quiz_question';
+export type AttachType = 'submission' | 'quiz_attempt' | 'external_eval' | 'message' | 'assignment' | 'quiz' | 'eval_material' | 'content' | 'quiz_question' | 'transfer_proof';
 export type AttachItem = { id: string; entity_id: string; file_id: string; created_by: string; created_at: string; name: string; size: number; mime: string; mine: boolean };
 const UUID = /^[0-9a-f-]{36}$/i;
 

@@ -5,7 +5,8 @@ import { PageHeader, Card, Badge, Empty, Stat } from '@/components/ui';
 import { fmtDate, fmtMoney, fmtNum } from '@/lib/format';
 import { PayInstallments } from '@/components/pay-installments';
 import { availableProviders } from '@/lib/payments';
-import { payInstallments } from '@/app/app/pagar/actions';
+import { payInstallments, submitTransfer } from '@/app/app/pagar/actions';
+import { loadPayConfig } from '@/lib/pay-config';
 
 export const metadata = { title: 'Mis pupilos' };
 const REL: Record<string, string> = { madre: 'Madre', padre: 'Padre', tutor: 'Tutor/a', apoderado: 'Apoderado/a', otro: 'Otro' };
@@ -15,6 +16,7 @@ export default async function Page() {
   if (!ctx.isGuardian) notFound();
   const { data: links } = await ctx.supabase.from('guardian_links').select('id, student_id, relationship')
     .eq('guardian_id', ctx.user.id).eq('status', 'activo').eq('organization_id', ctx.orgId!);
+  const pay = await loadPayConfig(ctx.orgId);
   const summaries = await Promise.all((links ?? []).map(async (l: any) => {
     const { data } = await ctx.supabase.rpc('guardian_summary', { p_student: l.student_id });
     const { data: inst } = await ctx.supabase.rpc('guardian_installments', { p_student: l.student_id });
@@ -40,7 +42,8 @@ export default async function Page() {
                 <Stat label="Asistencia promedio" value={att != null ? `${fmtNum(att)}%` : '—'} hint={att != null && att < 75 ? '⚠ Bajo el mínimo habitual' : undefined} />
                 <Stat label="Saldo pendiente" value={fmtMoney(s.balance)} hint={s.overdue ? `⚠ ${s.overdue} cuota(s) vencida(s)` : s.next_due ? `Próximo vencimiento ${fmtDate(s.next_due)}` : 'Al día'} />
               </div>
-              {inst.length > 0 && <div className="card card-pad mb-4"><PayInstallments studentId={link.student_id} items={inst} providers={availableProviders(inst[0].currency)} action={payInstallments} /></div>}
+              {inst.length > 0 && <div className="card card-pad mb-4"><PayInstallments studentId={link.student_id} items={inst} providers={availableProviders(inst[0].currency)} action={payInstallments}
+                transfer={pay.transfer ? { info: pay.bank_info } : null} transferAction={submitTransfer} org={ctx.orgId ?? undefined} office={pay.office ? pay.office_info || null : null} /></div>}
               <div className="grid gap-4 lg:grid-cols-2">
                 {courses.length ? courses.map((c, i) => {
                   const graded = (c.grades as any[]).filter((g) => g.grade != null);
