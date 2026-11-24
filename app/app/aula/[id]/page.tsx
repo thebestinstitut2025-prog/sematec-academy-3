@@ -5,6 +5,9 @@ import { getContext, can } from '@/lib/context';
 import { loadSection } from '@/lib/aula';
 import { PageHeader, Card, Badge, Empty, Tabs } from '@/components/ui';
 import { CopyCode } from '@/components/copy-code';
+import { QuizProFields, RubricField, ThemePicker } from '@/components/quiz-pro-fields';
+import { RubricTable } from '@/components/rubric-table';
+import { rubricText, themeOf } from '@/lib/quiz';
 import { AttachFiles } from '@/components/attach-files';
 import { AttachmentList } from '@/components/attachment-list';
 import { listAttachments } from '@/lib/attachments';
@@ -149,6 +152,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
               <Grid cols={3}><Field label="Fecha y hora de entrega" name="due_at" type="datetime-local" required /><Field label="Puntaje máximo" name="max_score" type="number" defaultValue="100" />
                 <SelectField label="Nota oficial (evaluación del libro)" name="assessment_id" placeholder="No pasa al libro" options={assessOpts} /></Grid>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="allow_late" defaultChecked /> Aceptar entregas atrasadas (quedan marcadas)</label>
+              <ThemePicker /><RubricField />
               <AttachFiles org={s.organization_id} label="📎 Archivos de la tarea (guía, pauta, plantilla, video…)" />
             </ActionForm></div></details>)}
         <div className="space-y-4">{tasks?.length ? tasks.map((a: any) => {
@@ -156,7 +160,9 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           const n = (counts ?? []).filter((c: any) => c.assignment_id === a.id);
           return (
             <Card key={a.id} title={a.title} actions={a.due_at < now ? <Badge color="gray">Cerrada {fmtDateTime(a.due_at)}</Badge> : <Badge color="amber">Entrega {fmtDateTime(a.due_at)}</Badge>}>
+              <div className={`-mt-2 mb-3 h-1.5 rounded-full bg-gradient-to-r ${themeOf(a.theme).grad}`} aria-hidden />
               {a.instructions && <p className="whitespace-pre-line text-sm text-slate-700">{a.instructions}</p>}
+              {Array.isArray(a.rubric) && a.rubric.length > 0 && <RubricTable rubric={a.rubric} scores={(mine ?? []).find((m: any) => m.assignment_id === a.id)?.rubric_scores} />}
               {taskMats[a.id]?.length ? <div className="mt-2" data-testid="material-tarea"><p className="text-xs font-semibold text-slate-500">📎 Archivos del profesor</p><AttachmentList items={taskMats[a.id]} canRemove={manager} path={base} /></div> : null}
               <p className="mt-2 text-xs text-slate-500">Puntaje máximo {a.max_score}{a.assessment_id && ' · cuenta para la nota oficial'}</p>
               {ctx.isOwner && <div className="mt-2"><OwnerActions table="assignments" id={a.id} active={a.published} path={`/app/aula/${id}?t=tareas`} name={`la tarea «${a.title}»`} /></div>}
@@ -170,6 +176,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                     <SelectField label="Nota oficial (evaluación del libro)" name="assessment_id" placeholder="No pasa al libro" defaultValue={a.assessment_id ?? ''} options={assessOpts} /></Grid>
                   <label className="flex items-center gap-2"><input type="checkbox" name="allow_late" defaultChecked={a.allow_late} /> Aceptar entregas atrasadas</label>
                   <label className="flex items-center gap-2"><input type="checkbox" name="published" defaultChecked={a.published} /> Visible para los estudiantes</label>
+                  <ThemePicker value={a.theme} /><RubricField value={rubricText(a.rubric)} />
                   <AttachFiles org={s.organization_id} label="📎 Agregar archivos a la tarea" />
                 </ActionForm>
                 <ActionForm action={deleteAssignment} inline submitLabel="🗑 Eliminar tarea" submitClass="btn-secondary btn-sm text-red-700"
@@ -219,6 +226,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                 <Field label="Tiempo límite (minutos, opcional)" name="time_limit_min" type="number" /></Grid>
               <Grid><Field label="Intentos permitidos" name="max_attempts" type="number" defaultValue="1" /><SelectField label="Nota oficial (evaluación del libro)" name="assessment_id" placeholder="No pasa al libro" options={assessOpts} /></Grid>
               <label className="flex items-center gap-2 text-sm"><input type="checkbox" name="show_results" defaultChecked /> Mostrar puntaje al alumno (y la revisión cuando cierre)</label>
+              <QuizProFields />
               <AttachFiles org={s.organization_id} label="📎 Archivos del examen (lectura, imágenes, tabla de fórmulas…)" />
             </ActionForm></div></details>)}
         <h2 className="mb-3 mt-2 text-lg font-bold">🔗 Evaluaciones con enlace (Google Forms, Drive, Microsoft Forms…)</h2>
@@ -283,6 +291,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           const open = q.opens_at <= now && q.closes_at > now;
           return (
             <Card key={q.id} title={q.title} actions={!q.published ? <Badge>Borrador</Badge> : open ? <Badge color="green">Abierto</Badge> : q.closes_at <= now ? <Badge color="gray">Cerrado</Badge> : <Badge color="blue">Próximo</Badge>}>
+              <div className={`-mt-2 mb-3 h-1.5 rounded-full bg-gradient-to-r ${themeOf(q.theme).grad}`} aria-hidden data-testid="franja-color" />
               <p className="text-sm text-slate-600">{fmtDateTime(q.opens_at)} → {fmtDateTime(q.closes_at)}{q.time_limit_min && ` · ${q.time_limit_min} min`} · {q.max_attempts} intento(s)</p>
               {ctx.isOwner && <div className="mt-2"><OwnerActions table="quizzes" id={q.id} active={q.published} path={`/app/aula/${id}?t=examenes`} name={`la prueba «${q.title}»`} /></div>}
               {q.instructions && <p className="mt-2 whitespace-pre-line text-sm">{q.instructions}</p>}
@@ -298,6 +307,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
                   <Grid><Field label="Intentos permitidos" name="max_attempts" type="number" defaultValue={String(q.max_attempts)} />
                     <SelectField label="Nota oficial (evaluación del libro)" name="assessment_id" placeholder="No pasa al libro" defaultValue={q.assessment_id ?? ''} options={assessOpts} /></Grid>
                   <label className="flex items-center gap-2"><input type="checkbox" name="show_results" defaultChecked={q.show_results} /> Mostrar puntaje al alumno</label>
+                  <QuizProFields q={q} />
                   <AttachFiles org={s.organization_id} label="📎 Agregar archivos al examen" />
                   <p className="text-xs text-slate-500">Las preguntas se editan en «Preguntas y resultados».</p>
                 </ActionForm>

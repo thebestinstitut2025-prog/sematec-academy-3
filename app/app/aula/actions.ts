@@ -2,7 +2,10 @@
 import { revalidatePath } from 'next/cache';
 import { attachMaterial, attachTo, readAttachmentIds } from '@/lib/attachments';
 import { getContext } from '@/lib/context';
-import { fail, guard, num, ok, reqStr, str, type ActionResult } from '@/lib/actions';
+import { cleanAnswers, parseRubric, themeKey } from '@/lib/quiz';
+import { quizProFields } from './editar-actions';
+import { saveQuestion } from './examen-pro-actions';
+import { fail, guard, num, ok, reqStr, str, ValidationError, type ActionResult } from '@/lib/actions';
 import { localToIso, saveLmsFile } from '@/lib/lms';
 
 const back = (s: string) => revalidatePath(`/app/aula/${s}`, 'layout');
@@ -59,6 +62,7 @@ export async function createAssignment(fd: FormData): Promise<ActionResult> {
       organization_id: ctx.orgId, section_id: section, title: reqStr(fd, 'title', 'Título'), instructions: str(fd, 'instructions'),
       due_at: localToIso(reqStr(fd, 'due_at', 'Fecha de entrega')), max_score: num(fd, 'max_score') ?? 100,
       allow_late: !!fd.get('allow_late'), assessment_id: str(fd, 'assessment_id'),
+      theme: themeKey(fd.get('theme')), rubric: rubricOf(fd),
     }).select('id').single();
     if (error) return fail(error);
     const m = await attachMaterial(ctx, fd, 'assignment', data.id);
@@ -109,6 +113,7 @@ export async function createQuiz(fd: FormData): Promise<ActionResult> {
       opens_at: localToIso(reqStr(fd, 'opens_at', 'Apertura')), closes_at: localToIso(reqStr(fd, 'closes_at', 'Cierre')),
       time_limit_min: num(fd, 'time_limit_min'), max_attempts: num(fd, 'max_attempts') ?? 1,
       show_results: !!fd.get('show_results'), assessment_id: str(fd, 'assessment_id'),
+      ...(await quizProFields(fd)),
     }).select('id').single();
     if (error) return fail(error);
     const m = await attachMaterial(ctx, fd, 'quiz', data.id);
@@ -118,27 +123,10 @@ export async function createQuiz(fd: FormData): Promise<ActionResult> {
   });
 }
 
-/** Opciones una por línea; las correctas comienzan con «*». */
+/** Agregar pregunta (cualquier tipo: única, múltiple, V/F, corta, numérica, completar, ordenar, unir, desarrollo). */
 export async function addQuestion(fd: FormData): Promise<ActionResult> {
-  return guard(async () => {
-    const ctx = await getContext();
-    const kind = reqStr(fd, 'kind', 'Tipo');
-    let lines = reqStr(fd, 'options', 'Opciones').split('\n').map((l) => l.trim()).filter(Boolean);
-    if (kind === 'vf') lines = [(lines[0] ?? '').startsWith('*') ? '*Verdadero' : 'Verdadero', (lines[0] ?? '').startsWith('*') ? 'Falso' : '*Falso'];
-    if (lines.length < 2 || lines.length > 8) return fail('Escriba entre 2 y 8 opciones, una por línea.');
-    const correct = lines.map((l, i) => (l.startsWith('*') ? i : -1)).filter((i) => i >= 0);
-    if (!correct.length) return fail('Marque la(s) respuesta(s) correcta(s) con * al inicio de la línea.');
-    if (kind === 'unica' && correct.length !== 1) return fail('En selección única debe haber exactamente una correcta.');
-    const quiz = reqStr(fd, 'quiz_id', 'examen');
-    const { data, error } = await ctx.supabase.from('quiz_questions').insert({
-      organization_id: ctx.orgId, quiz_id: quiz, kind, prompt: reqStr(fd, 'prompt', 'Pregunta'),
-      options: lines.map((l) => l.replace(/^\*\s*/, '')), points: num(fd, 'points') ?? 1, position: num(fd, 'position') ?? 0,
-    }).select('id').single();
-    if (error) return fail(error);
-    const { error: e2 } = await ctx.supabase.from('quiz_answer_keys').insert({ question_id: data.id, correct });
-    if (e2) { await ctx.supabase.from('quiz_questions').delete().eq('id', data.id); return fail(e2); }
-    back(reqStr(fd, 'section_id', 'sección')); return ok('Pregunta agregada.');
-  });
+  fd.delete('id');
+  return saveQuestion(fd);
 }
 
 export async function deleteQuestion(fd: FormData): Promise<ActionResult> {
@@ -169,16 +157,17 @@ export async function startQuiz(fd: FormData): Promise<ActionResult> {
   });
 }
 
-export async function submitQuiz(attemptId: string, answers: Record<string, number[]>, files: string[] = []): Promise<ActionResult> {
+export async function submitQuiz(attemptId: string, answers: Record<string, unknown>, files: string[] = []): Promise<ActionResult> {
   return guard(async () => {
     const ctx = await getContext();
     const ids = (Array.isArray(files) ? files : []).filter((x) => typeof x === 'string' && /^[0-9a-f-]{36}$/i.test(x)).slice(0, 20);
     const err = await attachTo(ctx, 'quiz_attempt', attemptId, ids);
     if (err) return fail(`No se pudieron adjuntar los archivos: ${err}`);
-    const { data, error } = await ctx.supabase.rpc('submit_quiz', { p_attempt: attemptId, p_answers: answers });
+    const { data, error } = await ctx.supabase.rpc('submit_quiz', { p_attempt: attemptId, p_answers: cleanAnswers(answers) });
     if (error) return fail(error);
-    const r = data as { score: number; max: number; grade: number | null; show: boolean };
-    return ok(r.show ? `Examen enviado. Puntaje: ${r.score} de ${r.max}${r.grade != null ? ` · Nota ${r.grade}` : ''}.` : 'Examen enviado.', r);
+    const r = data as { score: number; max: number; grade: number | null; show: boolean; review?: boolean; pass?: boolean | null };
+    if (!r.show) return ok('Examen enviado.', r);
+    return ok(`Examen enviado. Puntaje: ${r.score} de ${r.max}${r.grade != null ? ` · Nota ${r.grade}` : ''}.${r.review ? ' Algunas respuestas las corrige el profesor: el puntaje puede subir.' : ''}`, r);
   });
 }
 
@@ -255,4 +244,8 @@ export async function deleteExternalEval(fd: FormData): Promise<ActionResult> {
     if (!data?.length) return fail('No tiene permiso para eliminarla.');
     back(section); return ok('Evaluación eliminada (puede deshacerlo con ↶).');
   });
+}
+
+function rubricOf(fd: FormData) {
+  try { return parseRubric(str(fd, 'rubric')); } catch (e) { throw new ValidationError((e as Error).message); }
 }

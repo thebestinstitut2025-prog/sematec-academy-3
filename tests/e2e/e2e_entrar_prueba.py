@@ -40,7 +40,8 @@ def main():
         go(t, f'{BASE}/app/aula/{A}?t=examenes')
         t.locator('.card', has_text='Prueba abierta').first.locator('[data-testid=entrar-prueba]').click()
         t.wait_for_selector('[data-testid=vista-previa]')
-        check('¿Color del cielo?' in t.content() and t.locator('input[disabled]').count() == 2 and '✔' not in t.locator('main').inner_text(),
+        check('¿Color del cielo?' in t.content() and t.locator('[data-testid=pregunta] input[type=radio]').count() == 2 and t.locator('[data-testid=vista-previa-envio]').count() == 1
+              and t.locator('button:has-text("Enviar examen")').count() == 0 and '✔' not in t.locator('main').inner_text(),
               'Profesor: «Entrar a la prueba (vista previa)» la muestra como la ve el estudiante, sin respuestas correctas')
         check(one(f"select count(*) from quiz_attempts where quiz_id='{q_open}' and student_id in (select id from students where email like 'profesor%')") == '0', 'La vista previa no crea intentos')
         b.close()

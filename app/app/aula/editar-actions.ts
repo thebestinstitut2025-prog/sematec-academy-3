@@ -10,6 +10,8 @@ import { getContext } from '@/lib/context';
 import { fail, guard, num, ok, reqStr, str, ValidationError, type ActionResult } from '@/lib/actions';
 import { localToIso } from '@/lib/lms';
 import { attachMaterial } from '@/lib/attachments';
+import { parseRubric, themeKey } from '@/lib/quiz';
+import { saveQuestion } from './examen-pro-actions';
 
 const back = (s: string) => revalidatePath(`/app/aula/${s}`, 'layout');
 const NO_PERM = 'No tiene permiso para modificarlo (o ya fue eliminado).';
@@ -72,6 +74,7 @@ export async function updateAssignment(fd: FormData): Promise<ActionResult> {
       title: reqStr(fd, 'title', 'Título').slice(0, 200), instructions: str(fd, 'instructions'),
       due_at: iso(fd, 'due_at', 'Fecha de entrega'), max_score: max,
       allow_late: fd.get('allow_late') === 'on', assessment_id: str(fd, 'assessment_id'), published: fd.get('published') === 'on',
+      theme: themeKey(fd.get('theme')), rubric: rubricOf(fd),
     }, { count: 'exact' }).eq('id', id);
     if (error) return fail(error); if (!count) return fail(NO_PERM);
     const m = await attachMaterial(ctx, fd, 'assignment', id);
@@ -93,6 +96,14 @@ export async function deleteAssignment(fd: FormData): Promise<ActionResult> {
 }
 
 // ---------- Exámenes ----------
+/** Opciones «pro» del examen: portada, orden aleatorio, una por página, retroalimentación, % para aprobar. */
+export async function quizProFields(fd: FormData) { return quizPro(fd); }
+function quizPro(fd: FormData) {
+  const pass = num(fd, 'pass_pct');
+  if (pass != null && (pass < 1 || pass > 100)) throw new ValidationError('El porcentaje para aprobar debe estar entre 1 y 100.');
+  return { theme: themeKey(fd.get('theme')), shuffle_questions: fd.get('shuffle_questions') === 'on', shuffle_options: fd.get('shuffle_options') === 'on',
+    one_per_page: fd.get('one_per_page') === 'on', show_feedback: fd.get('show_feedback') === 'on', pass_pct: pass };
+}
 export async function updateQuiz(fd: FormData): Promise<ActionResult> {
   return guard(async () => {
     const ctx = await getContext(); const section = reqStr(fd, 'section_id', 'sección');
@@ -104,6 +115,7 @@ export async function updateQuiz(fd: FormData): Promise<ActionResult> {
     const { error, count } = await ctx.supabase.from('quizzes').update({
       title: reqStr(fd, 'title', 'Título').slice(0, 200), instructions: str(fd, 'instructions'), opens_at: opens, closes_at: closes,
       time_limit_min: tl, max_attempts: att, show_results: fd.get('show_results') === 'on', assessment_id: str(fd, 'assessment_id'),
+      ...quizPro(fd),
     }, { count: 'exact' }).eq('id', id);
     if (error) return fail(error); if (!count) return fail(NO_PERM);
     const m = await attachMaterial(ctx, fd, 'quiz', id);
@@ -124,34 +136,9 @@ export async function deleteQuiz(fd: FormData): Promise<ActionResult> {
   });
 }
 
-/** Opciones una por línea; las correctas comienzan con «*». */
-function parseOptions(kind: string, raw: string) {
-  let lines = raw.split('\n').map((l) => l.trim()).filter(Boolean);
-  if (kind === 'vf') lines = [(lines[0] ?? '').startsWith('*') ? '*Verdadero' : 'Verdadero', (lines[0] ?? '').startsWith('*') ? 'Falso' : '*Falso'];
-  if (lines.length < 2 || lines.length > 8) throw new Error('Escriba entre 2 y 8 opciones, una por línea.');
-  const correct = lines.map((l, i) => (l.startsWith('*') ? i : -1)).filter((i) => i >= 0);
-  if (!correct.length) throw new Error('Marque la(s) respuesta(s) correcta(s) con * al inicio de la línea.');
-  if (kind === 'unica' && correct.length !== 1) throw new Error('En selección única debe haber exactamente una correcta.');
-  return { options: lines.map((l) => l.replace(/^\*\s*/, '')), correct };
-}
-
+/** Editar pregunta (cualquier tipo). */
 export async function updateQuestion(fd: FormData): Promise<ActionResult> {
-  return guard(async () => {
-    const ctx = await getContext(); const section = reqStr(fd, 'section_id', 'sección');
-    const kind = reqStr(fd, 'kind', 'Tipo');
-    if (!['unica', 'multiple', 'vf'].includes(kind)) return fail('Tipo de pregunta inválido.');
-    let parsed; try { parsed = parseOptions(kind, reqStr(fd, 'options', 'Opciones')); } catch (e) { return fail((e as Error).message); }
-    const points = num(fd, 'points') ?? 1;
-    if (points <= 0) return fail('Los puntos deben ser mayores que 0.');
-    const id = reqStr(fd, 'id', 'pregunta');
-    const { error, count } = await ctx.supabase.from('quiz_questions').update({
-      kind, prompt: reqStr(fd, 'prompt', 'Pregunta').slice(0, 4000), options: parsed.options, points, position: num(fd, 'position') ?? 0,
-    }, { count: 'exact' }).eq('id', id);
-    if (error) return fail(error); if (!count) return fail(NO_PERM);
-    const { error: e2 } = await ctx.supabase.from('quiz_answer_keys').upsert({ question_id: id, correct: parsed.correct }, { onConflict: 'question_id' });
-    if (e2) return fail(e2);
-    back(section); return ok('Pregunta actualizada. Los intentos ya enviados conservan su puntaje.');
-  });
+  return guard(async () => { reqStr(fd, 'id', 'pregunta'); return saveQuestion(fd); });
 }
 
 // ---------- Evaluaciones con enlace ----------
@@ -231,4 +218,8 @@ export async function deletePost(fd: FormData): Promise<ActionResult> {
     if (error) return fail(error); if (!data?.length) return fail(NO_PERM);
     back(section); return ok('Mensaje eliminado.');
   });
+}
+
+function rubricOf(fd: FormData) {
+  try { return parseRubric(str(fd, 'rubric')); } catch (e) { throw new ValidationError((e as Error).message); }
 }
