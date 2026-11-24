@@ -4,7 +4,9 @@ import { ActionForm } from '@/components/forms';
 import { FileAccessFields } from '@/components/file-access-form';
 import { EditBox } from '@/components/edit-box';
 import { sharingOptions } from '@/lib/file-people';
-import { APP_PRESETS, APP_VIS } from '@/lib/app-presets';
+import { APP_CATS, APP_PRESETS, APP_VIS } from '@/lib/app-presets';
+import { WebSearch } from '@/components/web-search';
+import Link from 'next/link';
 import { saveAppLink, deleteAppLink } from './actions';
 
 export const dynamic = 'force-dynamic';
@@ -18,7 +20,7 @@ function Fields({ l, share }: { l?: L; share: Awaited<ReturnType<typeof sharingO
     <>
       {!l && <label className="block"><span className="label">App conocida (opcional)</span>
         <select name="preset" className="input" defaultValue="" data-testid="app-conocida"><option value="">— Otra app o enlace —</option>
-          {APP_PRESETS.map((p) => <option key={p.key} value={p.key}>{p.icon} {p.title}</option>)}</select></label>}
+          {APP_CATS.map((c) => <optgroup key={c} label={c}>{APP_PRESETS.filter((p) => p.cat === c).map((p) => <option key={p.key} value={p.key}>{p.icon} {p.title}</option>)}</optgroup>)}</select></label>}
       <div className="grid gap-3 sm:grid-cols-[5rem_1fr]">
         <label className="block"><span className="label">Ícono</span><input name="icon" maxLength={8} defaultValue={l?.icon} placeholder="🔗" className="input text-center text-lg" /></label>
         <label className="block"><span className="label">Nombre</span><input name="title" maxLength={80} defaultValue={l?.title} placeholder="Ej.: Canal de YouTube del curso" className="input" /></label>
@@ -59,6 +61,16 @@ export default async function Page() {
   return (
     <>
       <PageHeader title="📱 Apps y accesos" subtitle="Abra YouTube, Meet, Zoom, WhatsApp o cualquier enlace con un toque, desde el celular o el computador. Usted elige quién ve cada acceso." />
+      <div className="mb-6 grid gap-6 lg:grid-cols-[1.4fr_1fr]">
+        <Card title="🔎 Buscar en internet"><WebSearch /></Card>
+        <Card title="📲 Conectar con mi dispositivo">
+          <ul className="space-y-2 text-sm text-slate-700">
+            <li><b>1. Instale la plataforma</b> en su celular o computador: queda como una app con su ícono. <Link className="link" href="/descargar" data-testid="instalar-app">📲 Instalar ahora</Link></li>
+            <li><b>2. Comparta con la plataforma</b> desde cualquier app (YouTube, Galería, Chrome, WhatsApp…): toque «Compartir» y elija la plataforma. Los enlaces se pueden guardar aquí y las fotos o documentos quedan en «Mis archivos».</li>
+            <li><b>3. Agregue sus apps</b> del catálogo o cualquier enlace: en el celular se abren en la app instalada.</li>
+          </ul>
+        </Card>
+      </div>
       {error && <p className="mb-4 rounded-lg bg-amber-50 p-3 text-sm text-amber-900">Falta instalar la actualización «Contactos y apps» en Actualizar base de datos.</p>}
       <div className="grid gap-6 xl:grid-cols-[1fr_24rem]">
         <div className="space-y-6">
@@ -71,6 +83,17 @@ export default async function Page() {
           <ActionForm action={saveAppLink} submitLabel="Agregar"><Fields share={share} /></ActionForm>
         </Card>
       </div>
+      <Card title="🧩 Catálogo de apps — agregue con un toque" className="mt-6">
+        <p className="mb-3 text-sm text-slate-600">Se agregan a «Mis accesos» (solo para usted). Después, con ✏ Editar, puede compartirlos con un curso, personas o toda la institución. ¿No está la que busca? Agréguela con su enlace en «➕ Agregar app o enlace».</p>
+        <div className="space-y-4" data-testid="catalogo-apps">{APP_CATS.map((c) => (
+          <div key={c}><p className="mb-1 text-xs font-bold uppercase tracking-wide text-slate-500">{c}</p>
+            <div className="flex flex-wrap gap-2">{APP_PRESETS.filter((p) => p.cat === c).map((p) => {
+              const have = mine.some((l) => l.url === p.url);
+              return have ? <span key={p.key} className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-sm text-emerald-800">✓ {p.icon} {p.title}</span>
+                : <ActionForm key={p.key} action={saveAppLink} inline submitLabel={`＋ ${p.icon} ${p.title}`} submitClass="rounded-full border border-slate-200 px-3 py-1 text-sm hover:bg-slate-50">
+                    <input type="hidden" name="preset" value={p.key} /><input type="hidden" name="visibility" value="private" /></ActionForm>;
+            })}</div></div>))}</div>
+      </Card>
     </>
   );
 }

@@ -96,6 +96,11 @@ export function GlobalSearch({ items }: { items: NavItem[] }) {
                 </li>))}
             </ul>
             {q.trim().length >= 1 && (
+              <a href={`https://www.google.com/search?q=${encodeURIComponent(q.trim())}`} target="_blank" rel="noopener noreferrer" data-testid="buscar-en-google"
+                className="flex w-full items-center justify-between border-t border-slate-100 px-5 py-3 text-left text-sm font-semibold text-slate-700 hover:bg-slate-50">
+                <span>🌐 Buscar «{q.trim()}» en Google</span><span className="text-[11px] font-normal text-slate-400">se abre en otra pestaña</span>
+              </a>)}
+            {q.trim().length >= 1 && (
               <button type="button" onClick={goAll} data-testid="buscar-ver-todos"
                 className="flex w-full items-center justify-between border-t border-slate-100 px-5 py-3 text-left text-sm font-semibold text-brand-700 hover:bg-brand-50">
                 <span>🔎 Ver todos los resultados de «{q.trim()}»</span><kbd className="hidden text-[10px] text-slate-400 sm:inline">Ctrl + Enter</kbd>

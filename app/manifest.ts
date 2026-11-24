@@ -26,7 +26,14 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     shortcuts: [
       { name: 'Mi credencial', url: '/app/credencial' },
       { name: 'Aula de aprendizaje', url: '/app/aula' },
-      { name: 'Calendario', url: '/app/calendario' },
+      { name: 'Apps y accesos', url: '/app/apps' },
+      { name: 'Contactos', url: '/app/contactos' },
     ],
+    // 📲 La app instalada aparece en «Compartir» del celular o computador: enlaces, fotos, videos y documentos
+    share_target: {
+      action: '/app/compartir', method: 'post', enctype: 'multipart/form-data',
+      params: { title: 'title', text: 'text', url: 'url',
+        files: [{ name: 'files', accept: ['image/*', 'video/*', 'audio/*', 'application/pdf', 'text/*', '.docx', '.xlsx', '.pptx', '.doc', '.xls', '.ppt', '.zip'] }] },
+    },
   };
 }
