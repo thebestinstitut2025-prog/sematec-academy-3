@@ -1,6 +1,6 @@
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
-import { getPublicSite, anonClient, mediaUrl } from '@/lib/site';
+import { getPublicSite, anonClient, mediaUrl, registrationOpen } from '@/lib/site';
 import { availClass, availText } from '@/components/course-card';
 import { fmtDate } from '@/lib/format';
 import { PriceTag } from '@/components/price-tag';
@@ -15,7 +15,10 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
   const { data: c } = await anonClient().from('catalog_offerings').select('*').eq('organization_id', site.organization_id).eq('slug', slug).eq('is_published', true).maybeSingle();
   if (!c) notFound();
   const t = await getT();
-  const av = (await offeringAvailability(site.organization_id)).get(c.id);
+  const [avail, { data: incl }, regOpen] = await Promise.all([offeringAvailability(site.organization_id),
+    anonClient().rpc('offering_courses', { p_offering: c.id }), registrationOpen(site.organization_id)]);
+  const av = avail.get(c.id);
+  const subjects = ((incl ?? []) as { name: string; code: string; section: string }[]);
   const img = mediaUrl(c.image_asset_id);
   const apply = c.admission_mode === 'application';
   const row = (k: string, v: React.ReactNode) => <div className="flex justify-between gap-4"><dt className="text-slate-500">{k}</dt><dd className="text-right font-semibold">{v}</dd></div>;
@@ -41,6 +44,14 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
             <img src={img} alt={c.title} className="mb-8 w-full rounded-3xl object-cover shadow-lg" />
           )}
           <div className="whitespace-pre-line text-lg leading-relaxed text-slate-700" translate="yes">{c.description}</div>
+          {subjects.length > 0 && (
+            <section className="mt-10 rounded-3xl border border-slate-200 bg-slate-50 p-6" data-testid="asignaturas-incluidas">
+              <h2 className="text-xl font-black">🎓 Al inscribirte quedas en</h2>
+              <p className="mt-1 text-sm text-slate-600">Entras directo a estas asignaturas en tu aula virtual, con clases, materiales, notas y asistencia.</p>
+              <ul className="mt-4 grid gap-2 sm:grid-cols-2">{subjects.map((x, i) => (
+                <li key={i} className="flex items-center gap-3 rounded-2xl bg-white p-3 shadow-sm"><span className="grid h-9 w-9 place-items-center rounded-xl bg-brand-600 text-sm font-bold text-white">{i + 1}</span>
+                  <span><b className="block" translate="yes">{x.name}</b><span className="text-xs text-slate-500">{x.code}</span></span></li>))}</ul>
+            </section>)}
         </article>
         <aside className="h-fit rounded-3xl border border-slate-200 bg-white p-6 shadow-xl lg:sticky lg:top-24 lg:-mt-32">
           <PriceTag c={c} size="lg" t={t} />
@@ -57,6 +68,8 @@ export default async function Page({ params }: { params: Promise<{ slug: string 
             ? <p className="mt-4 rounded-lg bg-slate-100 p-3 text-center text-sm font-semibold text-slate-600" data-testid="no-disponible">{t('detail.unavailable')}</p>
             : <Link href={`/cursos/${c.slug}/inscripcion`} className="btn-primary mt-6 w-full py-3 text-base">{apply ? t('detail.apply') : t('detail.enrollPay')}</Link>}
           <p className="mt-3 text-center text-xs text-slate-500">{apply ? t('detail.applyNote') : t('detail.payNote')}</p>
+          {regOpen && !(av && (av.status === 'agotado' || av.status === 'cerrado')) && (
+            <Link href={`/inscripcion?curso=${c.id}`} className="btn-secondary mt-3 w-full py-2.5" data-testid="inscribirme-curso">📝 {t('detail.otherWays')}</Link>)}
           <Link href={`/contacto?curso=${c.id}`} className="mt-4 block text-center text-sm link">{t('detail.questions')}</Link>
         </aside>
       </div>

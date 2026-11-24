@@ -13,7 +13,8 @@ type Cfg = { enabled: boolean; fee: number; currency: string; title: string; int
   ask_program: boolean; shifts: string[]; modalities: string[]; pay_online: boolean; pay_transfer: boolean; pay_office: boolean; bank_info: string; office_info: string;
   programs: { id: string; name: string; group: string }[] };
 
-export default async function Page() {
+export default async function Page({ searchParams }: { searchParams: Promise<{ curso?: string }> }) {
+  const { curso = '' } = await searchParams;
   const site = await getPublicSite();
   if (!site) notFound();
   const t = await getT();
@@ -49,7 +50,7 @@ export default async function Page() {
                 <legend className="px-1 text-sm font-bold">{t('reg.choice')}</legend>
                 {c.ask_program !== false && (
                   <label className="block"><span className="label">{t('reg.program')} *</span>
-                    <select className="input" name="program_id" required defaultValue="" data-testid="elegir-programa">
+                    <select className="input" name="program_id" required defaultValue={c.programs.some((p) => p.id === curso) ? curso : ''} data-testid="elegir-programa">
                       <option value="" disabled>{t('reg.programPick')}</option>
                       {[...new Set(c.programs.map((p) => p.group))].map((g) => (
                         <optgroup key={g} label={g}>{c.programs.filter((p) => p.group === g).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>))}

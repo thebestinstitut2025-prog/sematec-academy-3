@@ -142,7 +142,7 @@ export default async function Page() {
             </ActionForm>
           </Card>)}
         {admin && (
-          <Card title="🌐 Inscripción en línea (sitio web)" className="xl:col-span-2">
+          <Card title="🌐 Inscripción en línea (sitio web)" className="xl:col-span-2" id="inscripcion-web">
             <ActionForm action={saveRegistrationConfig} submitLabel="Guardar" resetOnSuccess={false}>
               <label className="flex items-center gap-2 text-sm font-semibold"><input type="checkbox" name="enabled" defaultChecked={!!cfg.enabled} data-testid="inscripcion-activa" /> Recibir inscripciones desde el sitio web</label>
               <Grid><Field label="Monto de la inscripción (0 = sin costo)" name="fee" type="number" min={0} step="0.01" defaultValue={String(cfg.fee ?? 0)} /><Field label="Moneda" name="currency" defaultValue={currency} /></Grid>

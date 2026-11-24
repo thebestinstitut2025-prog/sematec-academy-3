@@ -116,3 +116,26 @@ export async function uploadCourseImage(fd: FormData): Promise<ActionResult> {
     return ok('Imagen del curso actualizada.');
   });
 }
+
+/** 🎓 Asignaturas (secciones) donde queda inscrito quien compra o se inscribe en este curso del sitio. */
+export async function setOfferingSections(fd: FormData): Promise<ActionResult> {
+  return guard(async () => {
+    const ctx = await getContext();
+    if (!can(ctx, 'settings.admin')) return fail('No tiene permisos.');
+    const id = reqStr(fd, 'id', 'curso');
+    const wanted = [...new Set(fd.getAll('section_ids').map(String).filter((x) => /^[0-9a-f-]{36}$/i.test(x)))].slice(0, 60);
+    const { data: ok_ } = wanted.length ? await ctx.supabase.from('sections').select('id').eq('organization_id', ctx.orgId!).in('id', wanted) : { data: [] as { id: string }[] };
+    const ids = (ok_ ?? []).map((s) => s.id);
+    const { error, count } = await ctx.supabase.from('catalog_offerings').update({ section_ids: ids }, { count: 'exact' }).eq('id', id);
+    if (error) return fail(/section_ids/.test(error.message) ? 'Falta instalar la actualización «Inscripción cursos» en «⬆ Actualizar sistema».' : error);
+    if (!count) return fail('No tiene permisos.');
+    let extra = '';
+    if (fd.get('enroll_now') === 'on' && ids.length) {
+      const { data: n, error: e2 } = await ctx.supabase.rpc('enroll_offering_buyers', { p_offering: id });
+      if (e2) return fail(`Se guardaron las asignaturas, pero no se pudo inscribir a los anteriores: ${e2.message}`);
+      extra = ` Se inscribieron ${n ?? 0} asignatura(s) a quienes ya habían comprado o se habían inscrito.`;
+    }
+    refresh(); revalidatePath('/app/sitio/cursos', 'layout');
+    return ok(ids.length ? `Listo: quien se inscriba en este curso queda en ${ids.length} asignatura(s) (aula virtual, notas y asistencia).${extra}` : 'El curso quedó sin asignaturas asociadas.');
+  });
+}
