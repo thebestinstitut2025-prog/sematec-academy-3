@@ -16,15 +16,17 @@ import {
   openCheckin, closeCheckin, teacherMark, attendanceFromVirtual, newRoomCode, addSectionTeacher, removeSectionTeacher,
 } from '../actions';
 import { PeoplePicker } from '@/components/people-picker';
+import { AttendanceSheet } from '@/components/attendance-sheet';
+import { createSheet } from '../planilla-actions';
 import { TEACHER_ROLES } from '@/lib/teaching';
 
 const TSTATUS: Record<string, [string, 'gray' | 'green' | 'red' | 'amber']> = {
   pending: ['Por dictar', 'gray'], held: ['Dictada', 'green'], cancelled: ['Suspendida', 'red'], rescheduled: ['Reprogramada', 'amber'],
 };
 
-export default async function Page({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ t?: string; clase?: string }> }) {
+export default async function Page({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ t?: string; clase?: string; planilla?: string }> }) {
   const { id } = await params;
-  const { t = 'resumen', clase } = await searchParams;
+  const { t = 'resumen', clase, planilla } = await searchParams;
   const ctx = await getContext();
   const sb = ctx.supabase;
   const { data: s } = await sb.from('sections')
@@ -41,7 +43,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
   const students = (roster ?? []).map((r: any) => ({ ...r.students, enr: r.id, enrStatus: r.status }))
     .sort((a: any, b: any) => a.last_names.localeCompare(b.last_names));
 
-  const tabs = [['resumen', 'Resumen e inscritos'], ['asistencia', 'Libro de clases y asistencia'], ['notas', 'Evaluaciones y notas']]
+  const tabs = [['resumen', 'Resumen e inscritos'], ['asistencia', 'Libro de clases y asistencia'], ['planillas', '📊 Planillas de asistencia'], ['notas', 'Evaluaciones y notas']]
     .map(([key, l]) => ({ key, label: l, href: `/app/secciones/${id}?t=${key}` }));
 
   return (
@@ -58,6 +60,7 @@ export default async function Page({ params, searchParams }: { params: Promise<{
       <Tabs items={tabs} current={t} />
       {t === 'resumen' && <Resumen />}
       {t === 'asistencia' && <Asistencia />}
+      {t === 'planillas' && <Planillas />}
       {t === 'notas' && <Notas />}
     </>
   );
@@ -142,6 +145,56 @@ export default async function Page({ params, searchParams }: { params: Promise<{
           )}
         </div>
       </div>
+    );
+  }
+
+  async function Planillas() {
+    const canWrite = (isTeacher || can(ctx, 'attendance.edit')) && !closed;
+    const { data: sheets, error: shErr } = await sb.from('attendance_sheets').select('*').eq('section_id', id).order('position').order('created_at');
+    if (shErr) return <Card><p className="text-sm text-amber-800">Falta instalar la actualización «Planillas de asistencia» en Actualizar base de datos.</p></Card>;
+    const list = (sheets ?? []) as any[];
+    const cur = list.find((x) => x.id === planilla) ?? list[0];
+    const create = canWrite && (
+      <details className="card mb-4" open={!list.length} data-testid="nueva-tabla"><summary className="cursor-pointer px-5 py-3 text-sm font-bold text-brand-700">➕ Crear tabla de asistencia</summary>
+        <div className="border-t border-slate-100 p-5">
+          <ActionForm action={createSheet} submitLabel="Crear tabla">
+            <input type="hidden" name="section_id" value={id} />
+            <Grid cols={3}>
+              <Field label="Nombre" name="name" required placeholder="Ej.: Marzo, Unidad 1, Semestre" />
+              <Field label="Clases desde (opcional)" name="from_date" type="date" />
+              <Field label="Hasta (opcional)" name="to_date" type="date" />
+            </Grid>
+            <Grid>
+              <SelectField label="Color" name="theme" defaultValue="azul" options={[['azul', 'Azul'], ['verde', 'Verde'], ['morado', 'Morado'], ['naranjo', 'Naranjo'], ['rosado', 'Rosado'], ['turquesa', 'Turquesa'], ['rojo', 'Rojo'], ['gris', 'Gris']].map(([value, label]) => ({ value, label }))} />
+              {list.length > 0 && <SelectField label="Copiar diseño y columnas de" name="copy_from" placeholder="— No copiar —" options={list.map((x) => ({ value: x.id, label: x.name }))} />}
+            </Grid>
+            <p className="text-xs text-slate-500">Cada tabla muestra las clases de su rango de fechas (sin fechas: todas). Puede crear todas las que quiera.</p>
+          </ActionForm>
+        </div></details>);
+    if (!cur) return <>{create}{!canWrite && <Empty>Aún no hay tablas de asistencia.</Empty>}</>;
+    let q = sb.from('class_sessions').select('id, starts_at, topic').eq('section_id', id).order('starts_at');
+    if (cur.from_date) q = q.gte('starts_at', `${cur.from_date}T00:00:00-04:00`);
+    if (cur.to_date) q = q.lte('starts_at', `${cur.to_date}T23:59:59-03:00`);
+    const { data: ses } = await q.limit(400);
+    const sesIds = (ses ?? []).map((x: any) => x.id);
+    const [{ data: recs }, { data: cells }] = await Promise.all([
+      sesIds.length ? sb.from('attendance_records').select('class_session_id, student_id, status').in('class_session_id', sesIds) : Promise.resolve({ data: [] as any[] }),
+      sb.from('attendance_sheet_cells').select('student_id, col_key, value').eq('sheet_id', cur.id),
+    ]);
+    const recMap: Record<string, string> = {}; for (const r of (recs ?? []) as any[]) recMap[`${r.class_session_id}|${r.student_id}`] = r.status;
+    const cellMap: Record<string, string> = {}; for (const c of (cells ?? []) as any[]) cellMap[`${c.student_id}|${c.col_key}`] = c.value;
+    const def = { theme: 'azul', font: 'md', density: 'normal', symbols: 'letras', header: 'fecha', stripes: true, grid: true, code: false, pct: true, totals: true, colTotals: true, highlightLow: true, title: '' };
+    return (
+      <>
+        <nav className="mb-3 flex flex-wrap gap-2" aria-label="Tablas" data-testid="tablas">{list.map((x) => (
+          <Link key={x.id} href={`/app/secciones/${id}?t=planillas&planilla=${x.id}`} className={x.id === cur.id ? 'btn-primary btn-sm' : 'btn-secondary btn-sm'}>📊 {x.name}</Link>))}</nav>
+        {create}
+        <Card title={`📊 ${cur.name}${cur.from_date || cur.to_date ? ` · ${cur.from_date ?? '…'} a ${cur.to_date ?? '…'}` : ''}`}>
+          <AttendanceSheet key={cur.id} sheet={{ id: cur.id, name: cur.name, design: { ...def, ...(cur.design ?? {}) }, extra_cols: cur.extra_cols ?? [], from_date: cur.from_date, to_date: cur.to_date }}
+            sessions={(ses ?? []) as any[]} students={students.map((x: any) => ({ id: x.id, name: `${x.last_names}, ${x.first_names}`, code: x.student_code }))}
+            records={recMap} cells={cellMap} canWrite={canWrite} sectionId={id} minPct={Number(s.min_attendance_pct ?? 75)} tz={tz} />
+        </Card>
+      </>
     );
   }
 
