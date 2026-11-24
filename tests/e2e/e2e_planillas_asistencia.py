@@ -99,6 +99,26 @@ def main():
         st = login(b.new_context(), 'estudiante1.a@demo.sematec.test')
         r = st.request.get(f'{BASE}/app/secciones/{A}?t=planillas')
         check(r.status == 404 or 'planilla' not in r.text(), 'Un estudiante no puede abrir las planillas')
+
+        # Tabla nueva sin clases: botón «Agregar la clase de hoy» y crear columnas por rango
+        from datetime import datetime
+        from zoneinfo import ZoneInfo
+        hoy = datetime.now(ZoneInfo('America/Santiago')).strftime('%Y-%m-%d')
+        h = one(f"insert into attendance_sheets (organization_id, section_id, name, from_date, to_date) select organization_id, id, 'Hoy', '{hoy}', '{hoy}' from sections where id='{A}' returning id")
+        go(p, f'{BASE}/app/secciones/{A}?t=planillas&planilla={h}')
+        check(p.locator('[data-testid=sin-clases]').count() == 1, '💡 Tabla sin clases: explica que primero hay que crear las columnas')
+        p.click('[data-testid=clase-hoy]')
+        p.wait_for_selector('[data-testid=columna-clase]', timeout=15000)
+        p.locator('[data-testid=fila-estudiante]').first.locator('[data-testid=celda]').first.click()
+        check(wait_for(f"select count(*) from attendance_records r join class_sessions c on c.id=r.class_session_id where c.section_id='{A}' and (c.starts_at at time zone 'America/Santiago')::date='{hoy}'", '1') == '1',
+              '➕ «Agregar la clase de hoy» crea la columna y ya se puede marcar')
+        r = one(f"insert into attendance_sheets (organization_id, section_id, name, from_date, to_date) select organization_id, id, 'Mayo', '2030-05-06', '2030-05-12' from sections where id='{A}' returning id")
+        go(p, f'{BASE}/app/secciones/{A}?t=planillas&planilla={r}')
+        p.locator('[data-testid=sin-clases] button:has-text("Crear columnas")').click(); msg = status_msg(p)
+        check('5 columna' in msg and one(f"select count(*) from class_sessions where section_id='{A}' and starts_at::date between '2030-05-06' and '2030-05-12'") == '5',
+              '📅 Crea de una vez una columna por cada día de lunes a viernes')
+        go(p, f'{BASE}/app/secciones/{A}?t=planillas&planilla={r}')
+        check(p.locator('[data-testid=columna-clase]').count() == 5, '📅 La tabla muestra las 5 columnas listas para marcar')
         b.close()
 
 if __name__ == '__main__':

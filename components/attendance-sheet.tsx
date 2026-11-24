@@ -2,7 +2,7 @@
 import { useMemo, useState, useTransition } from 'react';
 import { useRouter } from 'next/navigation';
 import { ActionForm } from '@/components/forms';
-import { setAttendanceCell, setAttendanceColumn, setSheetCell, updateSheet, addSheetColumn, editSheetColumn, deleteSheetColumn, deleteSheet } from '@/app/app/secciones/planilla-actions';
+import { setAttendanceCell, setAttendanceColumn, setSheetCell, updateSheet, addSheetColumn, addSheetColumnsRange, editSheetColumn, deleteSheetColumn, deleteSheet } from '@/app/app/secciones/planilla-actions';
 
 export type Design = {
   theme: string; font: string; density: string; symbols: string; header: string; stripes: boolean; grid: boolean; code: boolean;
@@ -39,6 +39,27 @@ function fmtHead(s: Ses, mode: string, i: number, tz: string) {
   return mode === 'numero' ? `Clase ${i + 1}` : f;
 }
 
+
+const DOW = [['1', 'Lu'], ['2', 'Ma'], ['3', 'Mi'], ['4', 'Ju'], ['5', 'Vi'], ['6', 'Sá'], ['0', 'Do']];
+/** 📅 Crear columnas de una vez (una por día de clases) */
+function RangeColumns({ sectionId, from, to }: { sectionId: string; from: string; to: string }) {
+  return (
+    <ActionForm action={addSheetColumnsRange} submitLabel="📅 Crear columnas" submitClass="btn-primary btn-sm">
+      <input type="hidden" name="section_id" value={sectionId} />
+      <p className="text-sm font-semibold">📅 Crear una columna por cada día de clases</p>
+      <div className="grid gap-2 sm:grid-cols-4">
+        <label><span className="label">Desde</span><input type="date" name="from" required defaultValue={from} className="input" data-testid="rango-desde" /></label>
+        <label><span className="label">Hasta</span><input type="date" name="to" required defaultValue={to} className="input" data-testid="rango-hasta" /></label>
+        <label><span className="label">Inicio</span><input type="time" name="start" defaultValue="08:00" className="input" /></label>
+        <label><span className="label">Término</span><input type="time" name="end" defaultValue="09:30" className="input" /></label>
+      </div>
+      <div className="flex flex-wrap gap-1" data-testid="dias-clase">{DOW.map(([v, l]) => (
+        <label key={v} className="cursor-pointer"><input type="checkbox" name="dow" value={v} defaultChecked={v !== '6' && v !== '0'} className="peer sr-only" />
+          <span className="block rounded-lg border border-slate-300 px-3 py-1 text-sm peer-checked:border-brand-600 peer-checked:bg-brand-600 peer-checked:text-white">{l}</span></label>))}</div>
+    </ActionForm>
+  );
+}
+
 /**
  * 📊 Planilla de asistencia: filas = estudiantes, columnas = clases (y columnas propias).
  * Marcar con un toque, pincel P/A/T/J, columnas y tablas editables, diseño, totales, Excel, PDF e impresión.
@@ -58,6 +79,7 @@ export function AttendanceSheet({ sheet, sessions, students, records, cells, can
   const [err, setErr] = useState<string | null>(null);
   const [saving, start] = useTransition();
   const th = THEMES[d.theme] ?? THEMES.azul;
+  const today = new Intl.DateTimeFormat('en-CA', { timeZone: tz || 'America/Santiago' }).format(new Date());
   const sym = SYM[d.symbols] ?? SYM.letras;
   const pad = PAD[d.density] ?? PAD.normal;
   const bd = d.grid ? 'border border-slate-200' : 'border-b border-slate-100';
@@ -145,13 +167,14 @@ export function AttendanceSheet({ sheet, sessions, students, records, cells, can
           <ActionForm action={addSheetColumn} submitLabel="Agregar columna">
             <input type="hidden" name="section_id" value={sectionId} />
             <div className="grid gap-2 sm:grid-cols-4">
-              <label><span className="label">Fecha</span><input type="date" name="date" required className="input" defaultValue={new Date().toISOString().slice(0, 10)} /></label>
+              <label><span className="label">Fecha</span><input type="date" name="date" required className="input" defaultValue={today} /></label>
               <label><span className="label">Inicio</span><input type="time" name="start" defaultValue="08:00" className="input" /></label>
               <label><span className="label">Término</span><input type="time" name="end" defaultValue="09:30" className="input" /></label>
               <label><span className="label">Tema (opcional)</span><input name="topic" maxLength={200} className="input" /></label>
             </div>
             <p className="text-xs text-slate-500">Cada columna es una clase del libro de clases: la asistencia que marque aquí es la oficial.</p>
           </ActionForm>
+          <div className="mt-3 border-t border-slate-200 pt-3"><RangeColumns sectionId={sectionId} from={sheet.from_date ?? today} to={sheet.to_date ?? today} /></div>
         </div>)}
 
       {panel === 'propia' && (
@@ -260,7 +283,17 @@ export function AttendanceSheet({ sheet, sessions, students, records, cells, can
             {extra.map((e) => <td key={e.key} className={bd} />)}{d.pct && <td className={bd} />}{d.totals && [0, 1, 2, 3].map((k) => <td key={k} className={bd} />)}
           </tr></tfoot>}
         </table>
-        {!sessions.length && <p className="p-4 text-center text-sm text-slate-500">Aún no hay clases en este rango. {canWrite && 'Use «➕ Columna (clase)».'}</p>}
+        {!sessions.length && (
+          <div className="space-y-3 p-4 text-center" data-testid="sin-clases">
+            <p className="text-sm text-slate-600">Para marcar asistencia, primero cree las <b>columnas</b>: cada columna es un día de clases.</p>
+            {canWrite && <>
+              <button type="button" className="btn-primary" disabled={saving} data-testid="clase-hoy" onClick={() => start(async () => {
+                const fd = new FormData(); fd.set('section_id', sectionId); fd.set('date', today); fd.set('start', '08:00'); fd.set('end', '09:30');
+                const r = await addSheetColumn(fd); if (r.ok) { setErr(null); router.refresh(); } else setErr(r.error ?? 'Error');
+              })}>➕ Agregar la clase de hoy y marcar</button>
+              <div className="mx-auto max-w-xl rounded-xl border border-slate-200 bg-slate-50 p-3 text-left"><RangeColumns sectionId={sectionId} from={sheet.from_date ?? today} to={sheet.to_date ?? today} /></div>
+            </>}
+          </div>)}
         {!students.length && <p className="p-4 text-center text-sm text-slate-500">Sin estudiantes inscritos.</p>}
       </div>
       <p className="text-xs text-slate-500 print:hidden">P = presente · A = ausente · T = atrasado · J = justificado. Toque una celda para marcar. Se guarda solo.</p>

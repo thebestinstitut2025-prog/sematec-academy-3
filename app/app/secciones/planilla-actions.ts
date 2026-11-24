@@ -171,3 +171,35 @@ export async function deleteSheetColumn(fd: FormData): Promise<ActionResult> {
     return ok(`Columna eliminada (${data ?? 0} registro(s) de asistencia borrados).`);
   });
 }
+
+/** 📅 Crea de una vez una columna (clase) por cada día de clases del rango: p. ej. lunes a viernes. */
+export async function addSheetColumnsRange(fd: FormData): Promise<ActionResult> {
+  return guard(async () => {
+    const ctx = await getContext();
+    const section = reqStr(fd, 'section_id', 'Sección');
+    const from = reqStr(fd, 'from', 'Desde'), to = reqStr(fd, 'to', 'Hasta');
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to) || to < from) return fail('Revise las fechas «desde» y «hasta».');
+    const days = new Set(fd.getAll('dow').map((x) => Number(x)).filter((n) => n >= 0 && n <= 6));
+    if (!days.size) return fail('Elija al menos un día de la semana.');
+    const start = str(fd, 'start') ?? '08:00', end = str(fd, 'end') ?? '09:30';
+    if (end <= start) return fail('La hora de término debe ser posterior a la de inicio.');
+    const tz = str(fd, 'tz_offset') ?? '-03:00';
+    const { data: s } = await ctx.supabase.from('sections').select('organization_id').eq('id', section).maybeSingle();
+    if (!s) return fail('Sección no encontrada.');
+    const { data: have } = await ctx.supabase.from('class_sessions').select('starts_at').eq('section_id', section)
+      .gte('starts_at', `${from}T00:00:00${tz}`).lte('starts_at', `${to}T23:59:59${tz}`);
+    const taken = new Set((have ?? []).map((x) => new Date(new Date(x.starts_at).getTime() + Number(tz.slice(0, 3)) * 3600e3).toISOString().slice(0, 10)));
+    const rows: Record<string, unknown>[] = [];
+    for (let d = new Date(`${from}T12:00:00Z`); d.toISOString().slice(0, 10) <= to; d.setUTCDate(d.getUTCDate() + 1)) {
+      const day = d.toISOString().slice(0, 10);
+      if (!days.has(d.getUTCDay()) || taken.has(day)) continue;
+      rows.push({ organization_id: s.organization_id, section_id: section, starts_at: `${day}T${start}:00${tz}`, ends_at: `${day}T${end}:00${tz}`, topic: str(fd, 'topic') });
+      if (rows.length > 120) return fail('Son demasiadas clases de una vez (máximo 120). Acorte el rango.');
+    }
+    if (!rows.length) return ok('No había días nuevos: esas fechas ya tienen su columna.');
+    const { error } = await ctx.supabase.from('class_sessions').insert(rows);
+    if (error) return fail(/duplicate|unique/.test(error.message) ? 'Alguna de esas clases ya existía.' : error);
+    refresh(section);
+    return ok(`Listo: ${rows.length} columna(s) creadas. Ya puede marcar la asistencia tocando cada celda.`);
+  });
+}
