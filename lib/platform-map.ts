@@ -7,7 +7,7 @@ export const MAP_GROUPS: { key: string; title: string; icon: string; color: stri
   { key: 'productividad', title: 'Oficina y productividad', icon: '💼', color: 'from-emerald-700 to-teal-500', hrefs: ['/app/sistemas', '/app/oficina', '/app/archivos', '/app/traducir'] },
   { key: 'finanzas', title: 'Finanzas y ventas', icon: '💳', color: 'from-amber-600 to-orange-500', hrefs: ['/app/finanzas', '/app/tienda', '/app/sucursales', '/app/inventario'] },
   { key: 'admin', title: 'Administración y personas', icon: '🧾', color: 'from-rose-700 to-pink-500', hrefs: ['/app/personal', '/app/usuarios', '/app/reportes', '/app/configuracion', '/app/sitio', '/app/modulos'] },
-  { key: 'sistema', title: 'Seguridad y sistema', icon: '🛡', color: 'from-zinc-800 to-zinc-600', hrefs: ['/app/ciberseguridad', '/app/auditoria', '/app/papelera', '/app/actualizar', '/app/instituciones'] },
+  { key: 'sistema', title: 'Seguridad y sistema', icon: '🛡', color: 'from-zinc-800 to-zinc-600', hrefs: ['/app/ciberseguridad', '/app/auditoria', '/app/papelera', '/app/mantencion', '/app/actualizar', '/app/instituciones'] },
 ];
 
 export const MAP_DESC: Record<string, string> = {
@@ -26,6 +26,6 @@ export const MAP_DESC: Record<string, string> = {
   '/app/tienda': 'Punto de venta, productos y pedidos', '/app/sucursales': 'Sedes y sucursales', '/app/inventario': 'Bienes, equipos y movimientos',
   '/app/personal': 'Funcionarios, contratos y permisos', '/app/usuarios': 'Cuentas, roles y permisos', '/app/reportes': 'Indicadores y reportes descargables',
   '/app/configuracion': 'Institución, sedes, correo y colores', '/app/sitio': 'Sitio web público, marca y medios de pago', '/app/modulos': 'Mostrar, ocultar y crear módulos del menú',
-  '/app/ciberseguridad': 'Estado de seguridad, sesiones e incidentes', '/app/auditoria': 'Registro inalterable de cambios', '/app/papelera': 'Restaurar lo eliminado y ver lo oculto',
+  '/app/ciberseguridad': 'Estado de seguridad, sesiones e incidentes', '/app/auditoria': 'Registro inalterable de cambios', '/app/papelera': 'Restaurar lo eliminado y ver lo oculto', '/app/mantencion': 'Poner en mantención la plataforma, un módulo o un área',
   '/app/actualizar': 'Actualizar la base de datos del sistema', '/app/instituciones': 'Plataformas para otras organizaciones',
 };

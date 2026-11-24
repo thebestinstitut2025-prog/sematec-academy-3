@@ -19,6 +19,9 @@ import { GlobalSearch } from '@/components/global-search';
 import { ConferenceHost } from '@/components/conference/host';
 import { WindowBar } from '@/components/window-bar';
 import { cardThemeAttrs, resolveCardTheme } from '@/lib/card-theme';
+import { canBypassMaint, hrefInMaint, isActive, loadMaint, maintFor } from '@/lib/maintenance';
+import { areaOfHref, loadAreas } from '@/lib/areas';
+import { fmtDateTime } from '@/lib/format';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,7 +30,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (ctx.needsMfa) redirect('/mfa');
   if (ctx.profile && ctx.profile.status !== 'active') redirect('/login');
 
-  const items = await buildNav(ctx);
+  let items = await buildNav(ctx);
   const locale = prefsOf(ctx.profile).locale ?? 'es';
   const [{ data: site }, { data: cardSetting }] = ctx.orgId
     ? await Promise.all([
@@ -38,6 +41,22 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const cards = cardThemeAttrs(resolveCardTheme((ctx.profile?.preferences as { cards?: unknown } | null)?.cards, cardSetting?.value));
   const path = (await headers()).get('x-sematec-path') ?? '';
   const blocked = ctx.orgMode === 'aula' && aulaExcluded(path);
+  // 🛠 Mantención: toda la plataforma o algunas opciones, sistemas o áreas
+  let maintHit: ReturnType<typeof maintFor> = null; let maintBanner = '';
+  if (ctx.orgId) {
+    const [maint, areasCfg, { data: modAreas }] = await Promise.all([
+      loadMaint(ctx.supabase, ctx.orgId), loadAreas(ctx.supabase, ctx.orgId),
+      ctx.supabase.from('custom_modules').select('slug, area').eq('organization_id', ctx.orgId),
+    ]);
+    const anyOn = (maint.global.on && isActive(maint.global)) || Object.values(maint.items).some((v) => isActive(v));
+    if (anyOn) {
+      const modArea = new Map(((modAreas ?? []) as { slug: string; area: string | null }[]).map((m) => [m.slug, m.area ?? 'otros']));
+      const areaOf = (h: string) => (h.startsWith('/app/m/') ? modArea.get(h.slice(7)) ?? 'otros' : areaOfHref(areasCfg, h));
+      items = items.map((i) => (hrefInMaint(maint, i.href, areaOf(i.href)) ? { ...i, label: `${i.label} · 🛠` } : i));
+      if (canBypassMaint(ctx)) maintBanner = maint.global.on && isActive(maint.global) ? 'Toda la plataforma está en mantención: solo el propietario puede entrar.' : 'Hay partes de la plataforma en mantención (marcadas con 🛠).';
+      else maintHit = maintFor(maint, path, items.map((i) => i.href), areaOf);
+    }
+  }
   const avatar = ctx.profile?.avatar_asset_id ? `/media/${ctx.profile.avatar_asset_id}` : null;
 
   return (
@@ -78,10 +97,19 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <VersionWatcher />
         {ctx.orgId && <UndoBar />}
         <ResultToast />
+        {maintBanner && <a href="/app/mantencion" className="mb-3 block rounded-xl bg-amber-100 px-4 py-2 text-sm font-semibold text-amber-900" data-testid="aviso-mantencion">🛠 {maintBanner} Ir a Mantención →</a>}
         {!ctx.org && !ctx.isPlatformAdmin ? (
           <div className="card card-pad max-w-xl">
             <h1 className="text-xl font-bold">Cuenta sin institución asignada</h1>
             <p className="mt-2 text-sm text-slate-600">Su cuenta está activa, pero aún no tiene un rol en ninguna institución. Solicite acceso a la administración.</p>
+          </div>
+        ) : maintHit ? (
+          <div className="card card-pad mx-auto mt-6 max-w-xl text-center" data-testid="en-mantencion">
+            <p className="text-6xl" aria-hidden>🛠</p>
+            <h1 className="mt-3 text-2xl font-bold">{maintHit.what} está en mantención</h1>
+            <p className="mt-2 whitespace-pre-line text-slate-600">{maintHit.message || 'Estamos haciendo mejoras para usted. Vuelva a intentar en un rato.'}</p>
+            {maintHit.until && <p className="mt-3 text-sm font-semibold text-brand-700">Vuelve a estar disponible: {fmtDateTime(maintHit.until)}</p>}
+            <div className="mt-5 flex flex-wrap justify-center gap-2"><a className="btn-primary" href="/app">🏠 Ir al inicio</a><a className="btn-secondary" href="/app/perfil">👤 Mi cuenta</a></div>
           </div>
         ) : blocked ? (
           <div className="card card-pad max-w-xl" data-testid="modulo-no-disponible">

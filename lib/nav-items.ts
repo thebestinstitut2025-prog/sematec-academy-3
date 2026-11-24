@@ -59,6 +59,7 @@ export function baseNav(ctx: Ctx): NavItem[] {
   if (can(ctx, 'security.admin') || can(ctx, 'audit.view') || ctx.isPlatformAdmin) items.push({ href: '/app/ciberseguridad', label: 'Centro de Ciberseguridad', icon: '🛡' });
   if (can(ctx, 'audit.view')) items.push({ href: '/app/auditoria', label: 'Auditoría', icon: '📜' });
   if (ctx.isOwner && ctx.orgId) items.push({ href: '/app/papelera', label: 'Papelera', icon: '🗑' });
+  if ((ctx.isOwner || ctx.isPlatformAdmin) && ctx.orgId) items.push({ href: '/app/mantencion', label: 'Mantención', icon: '🛠' });
   if (ctx.isPlatformAdmin) items.push({ href: '/app/actualizar', label: 'Actualizar sistema', icon: '⬆' });
   if (ctx.isPlatformAdmin) items.push({ href: '/app/instituciones', label: 'Plataformas y organizaciones', icon: '🌎' });
   if (can(ctx, 'settings.admin')) items.push({ href: '/app/sitio', label: 'Sitio web y marca', icon: '🌐' });
